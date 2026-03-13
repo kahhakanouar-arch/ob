@@ -5,9 +5,9 @@ local LocalPlayer = Players.LocalPlayer
 
 -- === CONFIGURATION ===
 local espInventoryEnabled = true 
-local MAX_DISTANCE = 1500 
+local MAX_DISTANCE = 1501 
 local BillboardCache = {}
-local nameCache = {} 
+local cleanNameCache = {} 
 
 local RARITY_COLORS = {
     ["Common"] = Color3.fromRGB(255, 255, 255),
@@ -19,41 +19,39 @@ local RARITY_COLORS = {
     ["Mythic"] = Color3.fromRGB(255, 0, 0),
 }
 
--- === LE NETTOYEUR DE NOM RADICAL ===
-local function getRealName(tool)
+-- === DÉTECTEUR UNIVERSEL (ARMES, RODS, PLATES, ETC.) ===
+local function getUniversalName(tool)
     if not tool or not tool.Name then return nil end
     
-    -- 1. On cherche d'abord un nom d'affichage propre dans les réglages du jeu
-    local displayName = tool:GetAttribute("ItemName") or tool:GetAttribute("DisplayName")
-    if displayName and tostring(displayName) ~= "" then
-        return tostring(displayName)
+    -- Si on a déjà nettoyé ce nom, on le sort du cache
+    if cleanNameCache[tool.Name] then return cleanNameCache[tool.Name] end
+
+    -- 1. On vérifie les attributs (souvent les vrais noms sont là)
+    local attrName = tool:GetAttribute("ItemName") or tool:GetAttribute("DisplayName") or tool:GetAttribute("WeaponName")
+    if attrName and tostring(attrName) ~= "" then
+        cleanNameCache[tool.Name] = tostring(attrName)
+        return tostring(attrName)
     end
 
-    -- 2. SUPPRESSION TOTALE DES IDS (On ne garde que les lettres A-Z)
-    -- Cette ligne retire TOUS les chiffres et symboles
-    local cleanName = tool.Name:gsub("[%d%p%c%s]+", " "):match("^%s*(.-)%s*$")
+    -- 2. NETTOYAGE AGRESSIF DES IDS
+    -- On retire TOUS les chiffres et les symboles bizarres (_ , - , #)
+    local clean = tool.Name:gsub("[%d%p%c%s]+", " "):match("^%s*(.-)%s*$")
     
-    -- Si le nom devient vide, on remet le nom original sans les chiffres
-    if not cleanName or #cleanName < 1 then
-        cleanName = tool.Name:gsub("%d+", "")
+    -- Si le nom devient vide (ex: l'item s'appelle "123"), on garde le nom original sans les chiffres
+    if not clean or #clean < 1 then
+        clean = tool.Name:gsub("%d+", "")
     end
-    
-    return cleanName
-end
 
--- === DÉTECTION DE LA COULEUR (FIX) ===
-local function getRarityColor(tool)
-    -- On cherche la rareté partout (Attributs ou Valeurs internes)
-    local rarity = tool:GetAttribute("Rarity") or tool:GetAttribute("RarityName")
-    
-    if not rarity then
-        local folder = tool:FindFirstChild("Rarity") or tool:FindFirstChild("Settings")
-        if folder and folder:FindFirstChild("Rarity") then
-            rarity = folder.Rarity.Value
-        end
+    -- 3. Cas spéciaux (Si c'est un RPG ou MP5 caché dans l'ID)
+    local upperName = tool.Name:upper()
+    if upperName:find("RPG") then clean = "RPG"
+    elseif upperName:find("MP") then clean = "MP5"
+    elseif upperName:find("REMI") then clean = "Remington"
+    elseif upperName:find("PLATE") then clean = "Plate"
     end
-    
-    return RARITY_COLORS[tostring(rarity)] or Color3.new(1, 1, 1) -- Blanc si non trouvé
+
+    cleanNameCache[tool.Name] = clean
+    return clean
 end
 
 local function updateESP(p)
@@ -76,30 +74,40 @@ local function updateESP(p)
     local layout = Instance.new("UIListLayout", container)
     layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     layout.VerticalAlignment = Enum.VerticalAlignment.Bottom 
+    layout.Padding = UDim.new(0, 2)
 
-    local tools = {}
-    for _, t in ipairs(p.Backpack:GetChildren()) do
-        if t:IsA("Tool") and t.Name:lower() ~= "fists" then table.insert(tools, t) end
+    -- On scanne TOUT l'inventaire sans exception
+    local allTools = {}
+    
+    -- Objets dans le Backpack
+    if p:FindFirstChild("Backpack") then
+        for _, t in ipairs(p.Backpack:GetChildren()) do
+            if t:IsA("Tool") then table.insert(allTools, t) end
+        end
     end
+    -- Objet en main
     for _, t in ipairs(char:GetChildren()) do
-        if t:IsA("Tool") and t.Name:lower() ~= "fists" then table.insert(tools, t) end
+        if t:IsA("Tool") then table.insert(allTools, t) end
     end
 
-    for _, tool in ipairs(tools) do
-        local name = getRealName(tool)
-        local color = getRarityColor(tool)
-        
-        local lbl = Instance.new("TextLabel", container)
-        lbl.Size = UDim2.new(0, 200, 0, 16)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = name
-        lbl.TextColor3 = color -- Applique enfin la couleur !
-        lbl.Font = Enum.Font.SourceSansBold
-        lbl.TextSize = 14
-        lbl.TextStrokeTransparency = 0.2
+    for _, tool in ipairs(allTools) do
+        local name = getUniversalName(tool)
+        if name and name:lower() ~= "fists" then
+            -- Détection de rareté pour la couleur
+            local rarity = tool:GetAttribute("Rarity") or tool:GetAttribute("RarityName") or "Common"
+            
+            local lbl = Instance.new("TextLabel", container)
+            lbl.Size = UDim2.new(0, 200, 0, 16)
+            lbl.BackgroundTransparency = 1
+            lbl.Text = name
+            lbl.TextColor3 = RARITY_COLORS[rarity] or Color3.new(1, 1, 1)
+            lbl.Font = Enum.Font.SourceSansBold
+            lbl.TextSize = 13
+            lbl.TextStrokeTransparency = 0.3
+        end
     end
     
-    bb.Enabled = (#tools > 0)
+    bb.Enabled = (#allTools > 0)
 end
 
 -- === INITIALISATION ===
@@ -111,9 +119,9 @@ local function createESP(p)
         if BillboardCache[p] then BillboardCache[p]:Destroy() end
         
         local bb = Instance.new("BillboardGui", root)
-        bb.Name = "InventoryFix"
-        bb.Size = UDim2.new(0, 200, 0, 100)
-        bb.StudsOffset = Vector3.new(0, -4, 0) -- Sous les pieds pour pas gêner
+        bb.Name = "UniversalInv"
+        bb.Size = UDim2.new(0, 200, 0, 150)
+        bb.StudsOffset = Vector3.new(0, -4, 0)
         bb.AlwaysOnTop = true
         
         local cont = Instance.new("Frame", bb)
@@ -126,13 +134,12 @@ local function createESP(p)
     if p.Character then setup(p.Character) end
 end
 
--- Boucle 1 seconde (Zéro Lag)
 task.spawn(function()
     while true do
         for _, p in ipairs(Players:GetPlayers()) do
             if p ~= LocalPlayer then updateESP(p) end
         end
-        task.wait(1)
+        task.wait(1) -- Optimisation anti-lag
     end
 end)
 
