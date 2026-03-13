@@ -8,8 +8,8 @@ local LocalPlayer = Players.LocalPlayer
 
 -- === CONFIGURATION ===
 local espInventoryEnabled = true 
-local MAX_DISTANCE = 2000 
-local UPDATE_INTERVAL = 1.0 
+local MAX_DISTANCE = 1800 
+local UPDATE_INTERVAL = 1.2 -- Optimisé pour les FPS
 local BillboardCache = {}
 local nameCache = {} 
 
@@ -22,23 +22,46 @@ local RARITY_COLORS = {
     ["Omega"] = Color3.fromRGB(255, 20, 51),
 }
 
--- === DÉTECTION SPÉCIALE BLOCKSPIN ===
-local function getToolName(tool)
-    if not tool or not tool.Name then return nil end
+-- === SYSTÈME DE DÉTECTION SANS IDS (BLOCKSPIN SPECIAL) ===
+local function getCleanName(tool)
+    if not tool then return nil end
+    local raw = tool.Name
     
-    -- Si c'est un ID numérique pur, on essaie de voir si c'est une canne
-    if tool.Name:match("^%d+$") then
-        if tool:FindFirstChild("Bobber") or tool:FindFirstChild("FishingLine") then
-            return "Fishing Rod"
+    if nameCache[raw] then return nameCache[raw] end
+
+    -- Si le nom est un ID (chiffres uniquement)
+    if raw:match("^%d+$") then
+        -- On cherche des indices à l'intérieur de l'outil pour trouver son vrai nom
+        local weaponType = nil
+        
+        -- Liste des mots clés à chercher dans les enfants du Tool
+        local keywords = {"ak47", "rpg", "glock", "shotgun", "rifle", "m4", "bat", "knife", "rod", "fishing"}
+        
+        for _, obj in ipairs(tool:GetDescendants()) do
+            local objName = obj.Name:lower()
+            for _, key in ipairs(keywords) do
+                if objName:find(key) then
+                    weaponType = key:upper()
+                    break
+                end
+            end
+            if weaponType then break end
         end
-        -- Pour Blockspin, si c'est un ID, on affiche "Item" + l'ID pour être sûr que ça s'affiche
-        return "Item (" .. tool.Name:sub(1,4) .. ")"
+        
+        if weaponType then
+            nameCache[raw] = weaponType
+            return weaponType
+        else
+            -- Si on ne trouve rien du tout, on n'affiche PAS l'ID (on laisse vide)
+            return nil 
+        end
     end
 
-    -- Nettoyage classique
-    local clean = tool.Name:gsub("Handle", ""):gsub("Tool", ""):gsub("%s+", " ")
-    if clean == "" or clean == " " then return "Unknown Item" end
+    -- Nettoyage standard pour les noms non-numériques
+    local clean = raw:gsub("Handle", ""):gsub("Tool", ""):gsub("Model", ""):gsub("%s+", "")
+    if clean == "" then return nil end
     
+    nameCache[raw] = clean
     return clean
 end
 
@@ -52,18 +75,6 @@ local function updateESP(p)
         return 
     end
     
-    local root = char.HumanoidRootPart
-    local lChar = LocalPlayer.Character
-    if lChar and lChar:FindFirstChild("HumanoidRootPart") then
-        if (lChar.HumanoidRootPart.Position - root.Position).Magnitude > MAX_DISTANCE then
-            bb.Enabled = false
-            return
-        end
-    end
-
-    local container = bb:FindFirstChild("EspContainer")
-    if not container then return end
-
     local tools = {}
     local bp = p:FindFirstChild("Backpack")
     if bp then
@@ -75,7 +86,8 @@ local function updateESP(p)
         if t:IsA("Tool") and t.Name:lower() ~= "fists" then table.insert(tools, t) end
     end
 
-    if #tools == 0 then
+    local container = bb:FindFirstChild("EspContainer")
+    if not container or #tools == 0 then
         bb.Enabled = false
         return
     end
@@ -88,19 +100,23 @@ local function updateESP(p)
 
     bb.Enabled = espInventoryEnabled
     
+    local foundAny = false
     for _, tool in ipairs(tools) do
-        local name = getToolName(tool)
+        local name = getCleanName(tool)
         if name then
+            foundAny = true
             local lbl = Instance.new("TextLabel", container)
-            lbl.Size = UDim2.new(0, 180, 0, 14)
+            lbl.Size = UDim2.new(0, 150, 0, 14)
             lbl.BackgroundTransparency = 1
-            lbl.Text = "[" .. name .. "]"
+            lbl.Text = " " .. name .. " "
             lbl.Font = Enum.Font.SourceSansBold
             lbl.TextSize = 12
             lbl.TextColor3 = RARITY_COLORS[tool:GetAttribute("Rarity")] or Color3.new(1, 1, 1)
             lbl.TextStrokeTransparency = 0.5
         end
     end
+    
+    if not foundAny then bb.Enabled = false end
 end
 
 local function createESP(p)
@@ -111,9 +127,9 @@ local function createESP(p)
         if BillboardCache[p] then BillboardCache[p]:Destroy() end
         
         local bb = Instance.new("BillboardGui", root)
-        bb.Name = "InventoryESP"
+        bb.Name = "CleanESP"
         bb.Size = UDim2.new(0, 200, 0, 100)
-        bb.StudsOffset = Vector3.new(0, -3.5, 0) 
+        bb.StudsOffset = Vector3.new(0, -3.5, 0)
         bb.AlwaysOnTop = true
         
         local cont = Instance.new("Frame", bb)
@@ -136,18 +152,17 @@ end
 for _, p in ipairs(Players:GetPlayers()) do createESP(p) end
 Players.PlayerAdded:Connect(createESP)
 
--- === INTERFACE ROUGE ET NOIR ===
+-- === GUI ROUGE ET NOIR ===
 local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
-ScreenGui.Name = "Anouar777x_KING_V2"
+ScreenGui.Name = "Anouar_Blockspin_Fix"
 
 local MainFrame = Instance.new("Frame", ScreenGui)
-MainFrame.Size = UDim2.new(0, 250, 0, 320)
-MainFrame.Position = UDim2.new(0.5, -125, 0.5, -160)
-MainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+MainFrame.Size = UDim2.new(0, 220, 0, 200)
+MainFrame.Position = UDim2.new(0.5, -110, 0.5, -100)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 MainFrame.BorderSizePixel = 0
 MainFrame.Visible = false
 Instance.new("UICorner", MainFrame)
-
 local Stroke = Instance.new("UIStroke", MainFrame)
 Stroke.Color = Color3.fromRGB(255, 0, 0)
 Stroke.Thickness = 2
@@ -155,64 +170,34 @@ Stroke.Thickness = 2
 local Title = Instance.new("TextLabel", MainFrame)
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
-Title.Text = "ANOUAR777X - BLOCKSPIN"
+Title.Text = "ANOUAR777X - NO IDS"
 Title.TextColor3 = Color3.new(1,1,1)
 Title.Font = Enum.Font.SourceSansBold
 Title.TextSize = 14
 Instance.new("UICorner", Title)
 
-local ToggleButton = Instance.new("TextButton", ScreenGui)
-ToggleButton.Size = UDim2.new(0, 80, 0, 30)
-ToggleButton.Position = UDim2.new(0, 10, 0.5, 0)
-ToggleButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-ToggleButton.Text = "OPEN"
-ToggleButton.TextColor3 = Color3.new(0,0,0)
-Instance.new("UICorner", ToggleButton)
+local ToggleESP = Instance.new("TextButton", MainFrame)
+ToggleESP.Size = UDim2.new(0.9, 0, 0, 40)
+ToggleESP.Position = UDim2.new(0.05, 0, 0.3, 0)
+ToggleESP.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+ToggleESP.Text = "ESP Inventory: ON"
+ToggleESP.TextColor3 = Color3.fromRGB(255, 0, 0)
+ToggleESP.Font = Enum.Font.SourceSansBold
+Instance.new("UICorner", ToggleESP)
 
-ToggleButton.MouseButton1Click:Connect(function()
-    MainFrame.Visible = not MainFrame.Visible
-end)
-
-local function createBtn(text, pos, callback)
-    local b = Instance.new("TextButton", MainFrame)
-    b.Size = UDim2.new(0.9, 0, 0, 40)
-    b.Position = UDim2.new(0.05, 0, 0, pos)
-    b.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    b.Text = text
-    b.TextColor3 = Color3.fromRGB(255, 255, 255)
-    b.Font = Enum.Font.SourceSansBold
-    b.TextSize = 14
-    Instance.new("UICorner", b)
-    b.MouseButton1Click:Connect(function() callback(b) end)
-    return b
-end
-
-createBtn("ESP Inventory: ON", 50, function(b)
+ToggleESP.MouseButton1Click:Connect(function()
     espInventoryEnabled = not espInventoryEnabled
-    b.Text = "ESP Inventory: " .. (espInventoryEnabled and "ON" or "OFF")
-    b.TextColor3 = espInventoryEnabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+    ToggleESP.Text = "ESP Inventory: " .. (espInventoryEnabled and "ON" or "OFF")
 end)
 
-createBtn("Aimbot: OFF", 100, function(b)
-    -- Logique simplifiée Aimbot ici
-    b.Text = "Aimbot fonctionnel"
-end)
+local ToggleMenu = Instance.new("TextButton", ScreenGui)
+ToggleMenu.Size = UDim2.new(0, 80, 0, 30)
+ToggleMenu.Position = UDim2.new(0, 10, 0.5, 0)
+ToggleMenu.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+ToggleMenu.Text = "OPEN"
+ToggleMenu.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", ToggleMenu)
 
--- Dragging
-local dragging, dragStart, startPos
-MainFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = MainFrame.Position
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+ToggleMenu.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
 end)
