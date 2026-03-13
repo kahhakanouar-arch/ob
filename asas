@@ -9,7 +9,7 @@ local LocalPlayer = Players.LocalPlayer
 -- === CONFIGURATION ===
 local espInventoryEnabled = true 
 local MAX_DISTANCE = 2000 
-local UPDATE_INTERVAL = 2.0 
+local UPDATE_INTERVAL = 2.1 
 local BillboardCache = {}
 local nameCache = {} 
 
@@ -22,20 +22,22 @@ local RARITY_COLORS = {
     ["Omega"] = Color3.fromRGB(255, 20, 51),
 }
 
--- === FONCTION NOM DES ITEMS (CORRIGÉE : PLUS D'IDS) ===
+-- === FONCTION NOM DES ITEMS (CORRECTEUR ANTI-ID) ===
 local function getRealName(t)
     if not t or not t.Name then return nil end
     if nameCache[t.Name] then return nameCache[t.Name] end
     
+    -- Si le nom ressemble à un ID (que des chiffres ou très long), on cherche le vrai nom
+    local isPossibleID = t.Name:match("^%d+$") or #t.Name > 15
+    
     local h = t:FindFirstChild("Handle")
-    -- On nettoie "Handle" mais on GARDE les chiffres pour éviter l'affichage de l'ID technique
-    local clean = t.Name:gsub("Handle", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
-    local fallbackName = (clean ~= "" and clean ~= "Tool") and clean or t.Name
-
+    
+    -- On cherche dans les dossiers du jeu pour trouver le nom propre
     for _, folder in ipairs({ReplicatedStorage:FindFirstChild("Items"), ReplicatedStorage:FindFirstChild("Tools"), StarterPack}) do
         if folder then
             for _, item in ipairs(folder:GetDescendants()) do
                 if item:IsA("Tool") and item:FindFirstChild("Handle") then
+                    -- On compare l'apparence (le Handle) pour être sûr que c'est la bonne canne
                     local match = true
                     if h then
                         for _, c in ipairs(h:GetChildren()) do
@@ -44,6 +46,7 @@ local function getRealName(t)
                     else
                         match = false
                     end
+                    
                     if match then 
                         nameCache[t.Name] = item.Name 
                         return item.Name 
@@ -52,7 +55,16 @@ local function getRealName(t)
             end
         end
     end
-    return fallbackName
+
+    -- Si c'est un ID, on ne l'affiche PAS, on met "Fishing Rod" par défaut si c'est une canne
+    if isPossibleID then
+        if t:FindFirstChild("Bobber") or t.Name:lower():find("rod") then
+            return "Fishing Rod"
+        end
+        return nil -- Ne rien afficher si c'est juste un ID moche
+    end
+
+    return t.Name:gsub("Handle", "") -- Retourne le nom de base nettoyé
 end
 
 local function updateESP(p)
