@@ -9,7 +9,7 @@ local LocalPlayer = Players.LocalPlayer
 -- === CONFIGURATION ===
 local espInventoryEnabled = true 
 local MAX_DISTANCE = 2000 
-local UPDATE_INTERVAL = 2.1 
+local UPDATE_INTERVAL = 2.5 
 local BillboardCache = {}
 local nameCache = {} 
 
@@ -27,8 +27,7 @@ local function getRealName(t)
     if nameCache[t.Name] then return nameCache[t.Name] end
     
     local h = t:FindFirstChild("Handle")
-    -- Nettoyage intelligent : on garde les chiffres pour les cannes à pêche
-    local clean = t.Name:gsub("Handle", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
+    local clean = t.Name:gsub("%d+", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
     local fallbackName = (clean ~= "" and clean ~= "Tool") and clean or t.Name
 
     for _, folder in ipairs({ReplicatedStorage:FindFirstChild("Items"), ReplicatedStorage:FindFirstChild("Tools"), StarterPack}) do
@@ -200,6 +199,7 @@ ToggleButton.Text = "Open"
 ToggleButton.TextColor3 = Color3.fromRGB(0,0,0)
 ToggleButton.TextScaled = true
 Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(0,8)
+ToggleButton.Visible = true
 
 local ToggleDrag = Instance.new("Frame", ToggleButton)
 ToggleDrag.Size = UDim2.new(1,0,1,0)
@@ -276,7 +276,7 @@ Instance.new("UICorner", PlayerListFrame).CornerRadius = UDim.new(0,8)
 local PlayerListLayout = Instance.new("UIListLayout", PlayerListFrame)
 PlayerListLayout.Padding = UDim.new(0,4)
 
--- === LOGIQUE ===
+-- Variables
 local espEnabledStatus = false
 local AimbotOn = false
 local FOVRadius = 110
