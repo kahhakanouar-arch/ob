@@ -1,70 +1,42 @@
+--// Services
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local StarterPack = game:GetService("StarterPack")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
--- === CONFIGURATION ===
+--// Configuration & Optimisation FPS
 local espInventoryEnabled = true 
-local MAX_DISTANCE = 1800 
-local UPDATE_INTERVAL = 1.2 -- Optimisé pour les FPS
+local MAX_DISTANCE = 2000 
+local UPDATE_INTERVAL = 1.5 
 local BillboardCache = {}
 local nameCache = {} 
 
+-- Couleurs des raretés autorisées
 local RARITY_COLORS = {
     ["Common"] = Color3.fromRGB(255, 255, 255),
     ["Uncommon"] = Color3.fromRGB(99, 255, 52),
     ["Rare"] = Color3.fromRGB(51, 170, 255),
-    ["Epic"] = Color3.fromRGB(237, 44, 255),
     ["Legendary"] = Color3.fromRGB(255, 150, 0),
-    ["Omega"] = Color3.fromRGB(255, 20, 51),
+    ["Omega"] = Color3.fromRGB(255, 20, 51)
 }
 
--- === SYSTÈME DE DÉTECTION SANS IDS (BLOCKSPIN SPECIAL) ===
-local function getCleanName(tool)
-    if not tool then return nil end
-    local raw = tool.Name
+--// Nettoyage des noms et retrait des IDs
+local function getRealName(t)
+    if not t or not t.Name then return nil end
+    if t.Name:match("^%d+$") then return nil end -- Ignore si c'est un ID (chiffres uniquement)
     
-    if nameCache[raw] then return nameCache[raw] end
-
-    -- Si le nom est un ID (chiffres uniquement)
-    if raw:match("^%d+$") then
-        -- On cherche des indices à l'intérieur de l'outil pour trouver son vrai nom
-        local weaponType = nil
-        
-        -- Liste des mots clés à chercher dans les enfants du Tool
-        local keywords = {"ak47", "rpg", "glock", "shotgun", "rifle", "m4", "bat", "knife", "rod", "fishing"}
-        
-        for _, obj in ipairs(tool:GetDescendants()) do
-            local objName = obj.Name:lower()
-            for _, key in ipairs(keywords) do
-                if objName:find(key) then
-                    weaponType = key:upper()
-                    break
-                end
-            end
-            if weaponType then break end
-        end
-        
-        if weaponType then
-            nameCache[raw] = weaponType
-            return weaponType
-        else
-            -- Si on ne trouve rien du tout, on n'affiche PAS l'ID (on laisse vide)
-            return nil 
-        end
-    end
-
-    -- Nettoyage standard pour les noms non-numériques
-    local clean = raw:gsub("Handle", ""):gsub("Tool", ""):gsub("Model", ""):gsub("%s+", "")
-    if clean == "" then return nil end
+    if nameCache[t.Name] then return nameCache[t.Name] end
     
-    nameCache[raw] = clean
-    return clean
+    local clean = t.Name:gsub("%d+", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
+    local finalName = (clean ~= "" and clean ~= "Tool") and clean or t.Name
+    
+    nameCache[t.Name] = finalName
+    return finalName
 end
 
+--// Mise à jour de l'inventaire ESP
 local function updateESP(p)
     local bb = BillboardCache[p]
     if not bb then return end
@@ -75,50 +47,60 @@ local function updateESP(p)
         return 
     end
     
-    local tools = {}
-    local bp = p:FindFirstChild("Backpack")
-    if bp then
-        for _, t in ipairs(bp:GetChildren()) do
-            if t:IsA("Tool") and t.Name:lower() ~= "fists" then table.insert(tools, t) end
+    local lChar = LocalPlayer.Character
+    if lChar and lChar:FindFirstChild("HumanoidRootPart") then
+        local dist = (lChar.HumanoidRootPart.Position - char.HumanoidRootPart.Position).Magnitude
+        if dist > MAX_DISTANCE then
+            bb.Enabled = false
+            return
         end
-    end
-    for _, t in ipairs(char:GetChildren()) do
-        if t:IsA("Tool") and t.Name:lower() ~= "fists" then table.insert(tools, t) end
     end
 
     local container = bb:FindFirstChild("EspContainer")
-    if not container or #tools == 0 then
-        bb.Enabled = false
-        return
-    end
-
+    if not container then return end
     container:ClearAllChildren()
+
     local layout = Instance.new("UIListLayout", container)
     layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     layout.VerticalAlignment = Enum.VerticalAlignment.Bottom 
     layout.Padding = UDim.new(0, 2)
 
-    bb.Enabled = espInventoryEnabled
-    
-    local foundAny = false
-    for _, tool in ipairs(tools) do
-        local name = getCleanName(tool)
-        if name then
-            foundAny = true
-            local lbl = Instance.new("TextLabel", container)
-            lbl.Size = UDim2.new(0, 150, 0, 14)
-            lbl.BackgroundTransparency = 1
-            lbl.Text = " " .. name .. " "
-            lbl.Font = Enum.Font.SourceSansBold
-            lbl.TextSize = 12
-            lbl.TextColor3 = RARITY_COLORS[tool:GetAttribute("Rarity")] or Color3.new(1, 1, 1)
-            lbl.TextStrokeTransparency = 0.5
+    local tools = {}
+    local function collect(folder)
+        if not folder then return end
+        for _, t in ipairs(folder:GetChildren()) do
+            if t:IsA("Tool") and t.Name:lower() ~= "fists" then
+                local rarity = t:GetAttribute("RarityName") or t:GetAttribute("Rarity")
+                if RARITY_COLORS[rarity] then -- Filtrage par rareté
+                    table.insert(tools, t)
+                end
+            end
         end
     end
+
+    collect(p:FindFirstChild("Backpack"))
+    collect(char)
+
+    bb.Enabled = espInventoryEnabled and (#tools > 0)
     
-    if not foundAny then bb.Enabled = false end
+    for _, tool in ipairs(tools) do
+        local name = getRealName(tool)
+        if name then
+            local lbl = Instance.new("TextLabel", container)
+            lbl.Size = UDim2.new(0, 180, 0, 14)
+            lbl.BackgroundTransparency = 1
+            lbl.Text = name
+            lbl.Font = Enum.Font.SourceSansBold
+            lbl.TextSize = 11
+            lbl.TextStrokeTransparency = 0.4
+            
+            local rarity = tool:GetAttribute("RarityName") or tool:GetAttribute("Rarity")
+            lbl.TextColor3 = RARITY_COLORS[rarity] or Color3.new(1, 1, 1)
+        end
+    end
 end
 
+--// Création Billboard
 local function createESP(p)
     if p == LocalPlayer then return end
     local function setup(char)
@@ -127,10 +109,11 @@ local function createESP(p)
         if BillboardCache[p] then BillboardCache[p]:Destroy() end
         
         local bb = Instance.new("BillboardGui", root)
-        bb.Name = "CleanESP"
-        bb.Size = UDim2.new(0, 200, 0, 100)
-        bb.StudsOffset = Vector3.new(0, -3.5, 0)
+        bb.Name = "Anouar_Inventory_ESP"
+        bb.Size = UDim2.new(0, 200, 0, 150)
+        bb.StudsOffset = Vector3.new(0, -3.5, 0) 
         bb.AlwaysOnTop = true
+        bb.MaxDistance = MAX_DISTANCE
         
         local cont = Instance.new("Frame", bb)
         cont.Name = "EspContainer"
@@ -138,66 +121,55 @@ local function createESP(p)
         cont.BackgroundTransparency = 1
         
         BillboardCache[p] = bb
-        task.spawn(function()
-            while char.Parent and bb.Parent do
-                updateESP(p)
-                task.wait(UPDATE_INTERVAL)
-            end
-        end)
+        updateESP(p)
     end
     p.CharacterAdded:Connect(setup)
     if p.Character then setup(p.Character) end
 end
 
+--// Init
 for _, p in ipairs(Players:GetPlayers()) do createESP(p) end
 Players.PlayerAdded:Connect(createESP)
 
--- === GUI ROUGE ET NOIR ===
-local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
-ScreenGui.Name = "Anouar_Blockspin_Fix"
-
-local MainFrame = Instance.new("Frame", ScreenGui)
-MainFrame.Size = UDim2.new(0, 220, 0, 200)
-MainFrame.Position = UDim2.new(0.5, -110, 0.5, -100)
-MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-MainFrame.BorderSizePixel = 0
-MainFrame.Visible = false
-Instance.new("UICorner", MainFrame)
-local Stroke = Instance.new("UIStroke", MainFrame)
-Stroke.Color = Color3.fromRGB(255, 0, 0)
-Stroke.Thickness = 2
-
-local Title = Instance.new("TextLabel", MainFrame)
-Title.Size = UDim2.new(1, 0, 0, 35)
-Title.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
-Title.Text = "ANOUAR777X - NO IDS"
-Title.TextColor3 = Color3.new(1,1,1)
-Title.Font = Enum.Font.SourceSansBold
-Title.TextSize = 14
-Instance.new("UICorner", Title)
-
-local ToggleESP = Instance.new("TextButton", MainFrame)
-ToggleESP.Size = UDim2.new(0.9, 0, 0, 40)
-ToggleESP.Position = UDim2.new(0.05, 0, 0.3, 0)
-ToggleESP.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-ToggleESP.Text = "ESP Inventory: ON"
-ToggleESP.TextColor3 = Color3.fromRGB(255, 0, 0)
-ToggleESP.Font = Enum.Font.SourceSansBold
-Instance.new("UICorner", ToggleESP)
-
-ToggleESP.MouseButton1Click:Connect(function()
-    espInventoryEnabled = not espInventoryEnabled
-    ToggleESP.Text = "ESP Inventory: " .. (espInventoryEnabled and "ON" or "OFF")
+task.spawn(function()
+    while true do
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then updateESP(p) end
+        end
+        task.wait(UPDATE_INTERVAL)
+    end
 end)
 
-local ToggleMenu = Instance.new("TextButton", ScreenGui)
-ToggleMenu.Size = UDim2.new(0, 80, 0, 30)
-ToggleMenu.Position = UDim2.new(0, 10, 0.5, 0)
-ToggleMenu.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
-ToggleMenu.Text = "OPEN"
-ToggleMenu.TextColor3 = Color3.new(1,1,1)
-Instance.new("UICorner", ToggleMenu)
+--// GUI (Anouar Style)
+local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
+ScreenGui.Name = "ANOUAR777X_ESP"
 
-ToggleMenu.MouseButton1Click:Connect(function()
-    MainFrame.Visible = not MainFrame.Visible
+local Main = Instance.new("Frame", ScreenGui)
+Main.Size = UDim2.new(0, 200, 0, 90)
+Main.Position = UDim2.new(0.5, -100, 0.05, 0)
+Main.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Main.BorderSizePixel = 0
+Instance.new("UICorner", Main)
+
+local Title = Instance.new("TextLabel", Main)
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+Title.Text = "ANOUAR777X"
+Title.TextColor3 = Color3.new(1, 1, 1)
+Title.Font = Enum.Font.GothamBold
+Instance.new("UICorner", Title)
+
+local Btn = Instance.new("TextButton", Main)
+Btn.Size = UDim2.new(0.9, 0, 0, 40)
+Btn.Position = UDim2.new(0.05, 0, 0.45, 0)
+Btn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+Btn.Text = "Inventory ESP: ON"
+Btn.TextColor3 = Color3.new(1, 1, 1)
+Btn.Font = Enum.Font.Gotham
+Instance.new("UICorner", Btn)
+
+Btn.MouseButton1Click:Connect(function()
+    espInventoryEnabled = not espInventoryEnabled
+    Btn.Text = "Inventory ESP: " .. (espInventoryEnabled and "ON" or "OFF")
+    Btn.BackgroundColor3 = espInventoryEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 0, 0)
 end)
