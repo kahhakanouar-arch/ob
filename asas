@@ -20,26 +20,39 @@ local RARITY_COLORS = {
     ["Mythic"] = Color3.fromRGB(255, 0, 0),
 }
 
--- === FONCTION DE NETTOYAGE INTELLIGENTE (ANTI-LAG) ===
-local function getCleanName(tool)
+-- === SYSTÈME DE DÉTECTION DE NOM (BLOCK SPIN) ===
+local function getRealItemName(tool)
+    if not tool then return nil end
     local rawName = tool.Name
+    
+    -- 1. Vérification du Cache pour éviter les lags
     if cleanNameCache[rawName] then return cleanNameCache[rawName] end
 
-    -- 1. On essaie de voir si le jeu a stocké le vrai nom dans un attribut (souvent le cas dans Block Spin)
-    local attrName = tool:GetAttribute("ItemName") or tool:GetAttribute("DisplayName")
-    if attrName and attrName ~= "" then
-        cleanNameCache[rawName] = attrName
-        return attrName
+    -- 2. Recherche dans les Attributes (Méthode principale Block Spin)
+    local attr = tool:GetAttribute("ItemName") or tool:GetAttribute("DisplayName") or tool:GetAttribute("WeaponName")
+    if attr and tostring(attr) ~= "" then
+        cleanNameCache[rawName] = tostring(attr)
+        return tostring(attr)
     end
 
-    -- 2. Sinon, on nettoie le nom : on enlève les chiffres et les IDs à la fin
-    -- Exemple: "Leopard_12345" devient "Leopard"
-    local clean = rawName:gsub("%d+", ""):gsub("_", " "):gsub("[%p%c]", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
+    -- 3. Recherche d'une StringValue à l'intérieur du Tool
+    local innerName = tool:FindFirstChild("ItemName") or tool:FindFirstChild("WeaponName")
+    if innerName and innerName:IsA("StringValue") then
+        cleanNameCache[rawName] = innerName.Value
+        return innerName.Value
+    end
+
+    -- 4. Nettoyage Intelligent du Nom (si l'ID est collé au nom)
+    -- On enlève les chiffres et les caractères spéciaux type "_" ou "-"
+    local clean = rawName:gsub("%d+", ""):gsub("[%p%c]", " "):gsub("%s+", " "):match("^%s*(.-)%s*$")
     
-    -- Si le nom est trop bizarre ou vide, on garde le nom original mais sans les chiffres
+    -- Si après nettoyage le nom est trop court, on garde le nom brut sans les chiffres
     if not clean or #clean < 2 then
         clean = rawName:gsub("%d+", "")
     end
+
+    -- Si c'est toujours vide, on affiche le nom original
+    if clean == "" then clean = rawName end
 
     cleanNameCache[rawName] = clean
     return clean
@@ -70,29 +83,34 @@ local function updateESP(p)
     layout.VerticalAlignment = Enum.VerticalAlignment.Bottom 
     layout.Padding = UDim.new(0, 2)
 
+    -- Liste des objets (Backpack + Main)
     local items = {}
-    -- On check le Backpack + le Character
-    for _, t in ipairs(p.Backpack:GetChildren()) do
-        if t:IsA("Tool") and t.Name:lower() ~= "fists" then table.insert(items, t) end
+    local backpack = p:FindFirstChild("Backpack")
+    if backpack then
+        for _, t in ipairs(backpack:GetChildren()) do
+            if t:IsA("Tool") then table.insert(items, t) end
+        end
     end
     for _, t in ipairs(char:GetChildren()) do
-        if t:IsA("Tool") and t.Name:lower() ~= "fists" then table.insert(items, t) end
+        if t:IsA("Tool") then table.insert(items, t) end
     end
 
+    -- Affichage
     for _, tool in ipairs(items) do
-        local name = getCleanName(tool)
-        
-        local lbl = Instance.new("TextLabel", container)
-        lbl.Size = UDim2.new(0, 180, 0, 14)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = name
-        lbl.Font = Enum.Font.SourceSansBold
-        lbl.TextSize = 12
-        lbl.TextStrokeTransparency = 0.3
-        
-        -- Couleur par rareté
-        local rarity = tool:GetAttribute("Rarity") or tool:GetAttribute("RarityName")
-        lbl.TextColor3 = RARITY_COLORS[rarity] or Color3.new(1, 1, 1)
+        local name = getRealItemName(tool)
+        if name and name:lower() ~= "fists" then
+            local lbl = Instance.new("TextLabel", container)
+            lbl.Size = UDim2.new(0, 180, 0, 15)
+            lbl.BackgroundTransparency = 1
+            lbl.Text = name
+            lbl.Font = Enum.Font.SourceSansBold
+            lbl.TextSize = 13
+            lbl.TextStrokeTransparency = 0.2
+            
+            -- Couleur par rareté ou type
+            local rarity = tool:GetAttribute("Rarity") or tool:GetAttribute("RarityName")
+            lbl.TextColor3 = RARITY_COLORS[rarity] or Color3.fromRGB(255, 255, 255)
+        end
     end
 
     bb.Enabled = (#items > 0)
@@ -107,9 +125,9 @@ local function createESP(p)
         if BillboardCache[p] then BillboardCache[p]:Destroy() end
         
         local bb = Instance.new("BillboardGui", root)
-        bb.Name = "InvESP"
+        bb.Name = "BlockSpin_Inv"
         bb.Size = UDim2.new(0, 200, 0, 100)
-        bb.StudsOffset = Vector3.new(0, -3.5, 0) 
+        bb.StudsOffset = Vector3.new(0, -4, 0) -- Sous les pieds
         bb.AlwaysOnTop = true
         
         local cont = Instance.new("Frame", bb)
@@ -124,32 +142,34 @@ local function createESP(p)
     if p.Character then setup(p.Character) end
 end
 
--- === BOUCLE DE MISE À JOUR OPTIMISÉE (0 LAG) ===
+-- === BOUCLE OPTIMISÉE (0 LAG) ===
 task.spawn(function()
     while true do
         for _, p in ipairs(Players:GetPlayers()) do
             if p ~= LocalPlayer then updateESP(p) end
         end
-        task.wait(0.8) -- Mise à jour fluide sans tuer les FPS
+        task.wait(1) -- Mise à jour chaque seconde pour économiser les FPS
     end
 end)
 
+-- Init
 for _, p in ipairs(Players:GetPlayers()) do createESP(p) end
 Players.PlayerAdded:Connect(createESP)
 
--- === UI DE TOGGLE ===
+-- Interface Toggle
 local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
 local Btn = Instance.new("TextButton", ScreenGui)
-Btn.Size = UDim2.new(0, 120, 0, 40)
-Btn.Position = UDim2.new(0, 10, 0.45, 0)
-Btn.Text = "Inventory ESP"
-Btn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-Btn.TextColor3 = Color3.new(1, 1, 1)
+Btn.Size = UDim2.new(0, 130, 0, 40)
+Btn.Position = UDim2.new(0, 10, 0.5, 0)
+Btn.Text = "ESP Inventory: ON"
+Btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Btn.TextColor3 = Color3.new(0, 1, 0)
 Instance.new("UICorner", Btn)
 
 Btn.MouseButton1Click:Connect(function()
     espInventoryEnabled = not espInventoryEnabled
+    Btn.Text = "ESP Inventory: " .. (espInventoryEnabled and "ON" or "OFF")
     Btn.TextColor3 = espInventoryEnabled and Color3.new(0, 1, 0) or Color3.new(1, 0, 0)
 end)
 
-print("Block Spin ESP V3 chargé - Noms corrigés & No Lag")
+print("Block Spin ESP Fixé - Toutes les armes devraient s'afficher sans lag.")
