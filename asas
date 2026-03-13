@@ -9,7 +9,7 @@ local LocalPlayer = Players.LocalPlayer
 -- === CONFIGURATION ===
 local espInventoryEnabled = true 
 local MAX_DISTANCE = 2000 
-local UPDATE_INTERVAL = 2.0 
+local UPDATE_INTERVAL = 2.1 
 local BillboardCache = {}
 local nameCache = {} 
 
@@ -22,33 +22,33 @@ local RARITY_COLORS = {
     ["Omega"] = Color3.fromRGB(255, 20, 51),
 }
 
--- FONCTION DE FIX POUR LES NOMS (BLOCKSPIN SPECIAL)
+-- === FIX FPS & NOMS BLOCKSPIN ===
 local function getRealName(t)
     if not t then return nil end
     if nameCache[t.Name] then return nameCache[t.Name] end
     
-    -- 1. Chercher une StringValue à l'intérieur (souvent appelée "ItemName" ou "WeaponName")
-    local internalName = t:FindFirstChildOfClass("StringValue") or t:FindFirstChild("Name")
-    if internalName and internalName:IsA("StringValue") and internalName.Value ~= "" then
-        nameCache[t.Name] = internalName.Value
-        return internalName.Value
+    -- 1. Chercher une StringValue à l'intérieur (méthode Blockspin)
+    for _, child in ipairs(t:GetChildren()) do
+        if child:IsA("StringValue") and child.Value ~= "" and not tonumber(child.Value) then
+            nameCache[t.Name] = child.Value
+            return child.Value
+        end
     end
 
-    -- 2. Chercher dans les attributs (très fréquent sur Blockspin)
-    local attr = t:GetAttribute("DisplayName") or t:GetAttribute("ItemName") or t:GetAttribute("Weapon")
-    if attr and tostring(attr) ~= "" then
+    -- 2. Chercher dans les attributs
+    local attr = t:GetAttribute("ItemName") or t:GetAttribute("DisplayName") or t:GetAttribute("WeaponName")
+    if attr and tostring(attr) ~= "" and not tonumber(tostring(attr)) then
         nameCache[t.Name] = tostring(attr)
         return nameCache[t.Name]
     end
 
-    -- 3. Si le nom est un pur chiffre (ID), on essaie de nettoyer les caractères spéciaux
-    local clean = t.Name:gsub("[%d%p]+", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
+    -- 3. Si le nom original contient des chiffres, on les enlève
+    local clean = t.Name:gsub("%d+", ""):gsub("%p+", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
     if clean and clean ~= "" and clean ~= "Tool" then
         nameCache[t.Name] = clean
         return clean
     end
 
-    -- 4. Si vraiment rien n'est trouvé, on garde le nom d'origine
     return t.Name
 end
 
@@ -63,11 +63,12 @@ local function updateESP(p)
     end
     
     local lChar = LocalPlayer.Character
-    local dist = (lChar and lChar:FindFirstChild("HumanoidRootPart")) and (lChar.HumanoidRootPart.Position - char.HumanoidRootPart.Position).Magnitude or 0
-    
-    if dist > MAX_DISTANCE then
-        bb.Enabled = false
-        return
+    if lChar and lChar:FindFirstChild("HumanoidRootPart") then
+        local dist = (lChar.HumanoidRootPart.Position - char.HumanoidRootPart.Position).Magnitude
+        if dist > MAX_DISTANCE then
+            bb.Enabled = false
+            return
+        end
     end
 
     local container = bb:FindFirstChild("EspContainer")
@@ -119,7 +120,7 @@ local function createESP(p)
         if BillboardCache[p] then BillboardCache[p]:Destroy() end
         
         local bb = Instance.new("BillboardGui", root)
-        bb.Name = "Inventory Esp"
+        bb.Name = "InventoryESP_Blockspin"
         bb.Size = UDim2.new(0, 200, 0, 150)
         bb.StudsOffset = Vector3.new(0, -3.5, 0) 
         bb.AlwaysOnTop = true
@@ -135,12 +136,6 @@ local function createESP(p)
         
         char.ChildAdded:Connect(function(child) if child:IsA("Tool") then task.wait(0.3); updateESP(p) end end)
         char.ChildRemoved:Connect(function(child) if child:IsA("Tool") then task.wait(0.3); updateESP(p) end end)
-        
-        local backpack = p:WaitForChild("Backpack", 5)
-        if backpack then
-            backpack.ChildAdded:Connect(function() updateESP(p) end)
-            backpack.ChildRemoved:Connect(function() updateESP(p) end)
-        end
     end
     p.CharacterAdded:Connect(setup)
     if p.Character then setup(p.Character) end
@@ -149,7 +144,6 @@ end
 for _, p in ipairs(Players:GetPlayers()) do createESP(p) end
 Players.PlayerAdded:Connect(createESP)
 
--- Boucle de rafraîchissement lente pour économiser les FPS
 task.spawn(function()
     while true do
         for _, p in ipairs(Players:GetPlayers()) do
@@ -159,34 +153,34 @@ task.spawn(function()
     end
 end)
 
--- === INTERFACE STYLE ANOUAR (ROUGE/NOIR) ===
+-- === INTERFACE ROUGE ET NOIRE ===
 local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
-ScreenGui.Name = "Anouar"
+ScreenGui.Name = "anouar777x_Fix"
 
 local MainFrame = Instance.new("Frame", ScreenGui)
 MainFrame.Size = UDim2.new(0, 300, 0, 350)
 MainFrame.Position = UDim2.new(0.4, 0, 0.3, 0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
 MainFrame.BorderSizePixel = 2
-MainFrame.BorderColor3 = Color3.fromRGB(255, 0, 0)
+MainFrame.BorderColor3 = Color3.fromRGB(200, 0, 0)
 MainFrame.Visible = false
 Instance.new("UICorner", MainFrame)
 
 local Title = Instance.new("TextLabel", MainFrame)
 Title.Size = UDim2.new(1, 0, 0, 40)
-Title.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+Title.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
 Title.Text = "ANOUAR777X"
 Title.TextColor3 = Color3.new(1, 1, 1)
 Title.Font = Enum.Font.SourceSansBold
-Title.TextSize = 18
+Title.TextSize = 16
 Instance.new("UICorner", Title)
 
 local ToggleBtn = Instance.new("TextButton", ScreenGui)
-ToggleBtn.Size = UDim2.new(0, 100, 0, 40)
-ToggleBtn.Position = UDim2.new(0.9, 0, 0.05, 0)
-ToggleBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+ToggleBtn.Size = UDim2.new(0, 80, 0, 35)
+ToggleBtn.Position = UDim2.new(0.9, 0, 0.1, 0)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
 ToggleBtn.Text = "MENU"
-ToggleBtn.TextColor3 = Color3.new(1,1,1)
+ToggleBtn.TextColor3 = Color3.new(1, 1, 1)
 Instance.new("UICorner", ToggleBtn)
 
 ToggleBtn.MouseButton1Click:Connect(function()
@@ -198,7 +192,7 @@ ESPInventoryToggle.Size = UDim2.new(0.8, 0, 0.15, 0)
 ESPInventoryToggle.Position = UDim2.new(0.1, 0, 0.2, 0)
 ESPInventoryToggle.BackgroundColor3 = Color3.fromRGB(80, 0, 0)
 ESPInventoryToggle.Text = "ESP Inventory: ON"
-ESPInventoryToggle.TextColor3 = Color3.new(1,1,1)
+ESPInventoryToggle.TextColor3 = Color3.new(1, 1, 1)
 ESPInventoryToggle.TextScaled = true
 Instance.new("UICorner", ESPInventoryToggle)
 
