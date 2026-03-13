@@ -1,17 +1,14 @@
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local StarterPack = game:GetService("StarterPack")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
--- === CONFIGURATION ===
+-- === CONFIGURATION OPTIMISÉE ===
 local espInventoryEnabled = true 
-local MAX_DISTANCE = 2000 
-local UPDATE_INTERVAL = 2.0 
+local MAX_DISTANCE = 1500 
 local BillboardCache = {}
-local nameCache = {} 
+local cleanNameCache = {} -- Pour ne pas recalculer 100x la même chose
 
 local RARITY_COLORS = {
     ["Common"] = Color3.fromRGB(255, 255, 255),
@@ -22,48 +19,26 @@ local RARITY_COLORS = {
     ["Omega"] = Color3.fromRGB(255, 20, 51),
 }
 
--- === SYSTÈME DE NETTOYAGE D'IDS (BLOCK SPIN SPECIAL) ===
-local function getRealName(t)
-    if not t or not t.Name then return nil end
-    if nameCache[t.Name] then return nameCache[t.Name] end
+-- === SYSTÈME ANTI-LAG (NETTOYAGE INSTANTANÉ) ===
+local function getCleanName(toolName)
+    if cleanNameCache[toolName] then return cleanNameCache[toolName] end
+
+    -- On retire les IDs (chiffres), les points, et les codes de fin
+    -- Exemple: "Leopard_827364" -> "Leopard"
+    local clean = toolName:gsub("%d+", ""):gsub("[%p%c]", " "):gsub("%s+", " "):match("^%s*(.-)%s*$")
     
-    -- Nettoyage agressif : On garde uniquement les lettres (A-Z) et les espaces
-    -- On supprime TOUS les chiffres (%d) et TOUS les symboles spéciaux (%p)
-    local clean = t.Name:gsub("%d+", ""):gsub("[%p%c]", " "):gsub("%s+", " "):match("^%s*(.-)%s*$")
+    if #clean < 2 then clean = "Unknown Item" end
     
-    -- Si le nom résultant est trop court ou générique (ex: "Tool"), on tente de récupérer via les attributs
-    local finalName = (clean ~= "" and #clean > 2) and clean or t.Name
-    
-    -- Recherche de secours dans ReplicatedStorage pour trouver le vrai nom sans ID
-    local h = t:FindFirstChild("Handle")
-    for _, folder in ipairs({ReplicatedStorage:FindFirstChild("Items"), StarterPack}) do
-        if folder then
-            for _, item in ipairs(folder:GetDescendants()) do
-                if item:IsA("Tool") and item:FindFirstChild("Handle") then
-                    local match = true
-                    if h then
-                        for _, c in ipairs(h:GetChildren()) do
-                            if not item.Handle:FindFirstChild(c.Name) then match = false break end
-                        end
-                    else
-                        match = false
-                    end
-                    if match then 
-                        nameCache[t.Name] = item.Name 
-                        return item.Name 
-                    end
-                end
-            end
-        end
-    end
-    
-    nameCache[t.Name] = finalName
-    return finalName
+    cleanNameCache[toolName] = clean
+    return clean
 end
 
 local function updateESP(p)
     local bb = BillboardCache[p]
-    if not bb then return end
+    if not bb or not espInventoryEnabled then 
+        if bb then bb.Enabled = false end
+        return 
+    end
     
     local char = p.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then 
@@ -71,13 +46,11 @@ local function updateESP(p)
         return 
     end
     
-    local lChar = LocalPlayer.Character
-    if lChar and lChar:FindFirstChild("HumanoidRootPart") then
-        local dist = (lChar.HumanoidRootPart.Position - char.HumanoidRootPart.Position).Magnitude
-        if dist > MAX_DISTANCE then
-            bb.Enabled = false
-            return
-        end
+    -- Check Distance simple pour économiser les FPS
+    local dist = (Camera.CFrame.Position - char.HumanoidRootPart.Position).Magnitude
+    if dist > MAX_DISTANCE then
+        bb.Enabled = false
+        return
     end
 
     local container = bb:FindFirstChild("EspContainer")
@@ -89,51 +62,52 @@ local function updateESP(p)
     layout.VerticalAlignment = Enum.VerticalAlignment.Bottom 
     layout.Padding = UDim.new(0, 2)
 
-    local tools = {}
-    if p:FindFirstChild("Backpack") then
-        for _, t in ipairs(p.Backpack:GetChildren()) do
-            if t:IsA("Tool") and t.Name:lower() ~= "fists" then table.insert(tools, t) end
-        end
+    -- Scan rapide uniquement du personnage et du backpack (pas de ReplicatedStorage)
+    local foundTools = 0
+    local items = {}
+    
+    for _, t in ipairs(p.Backpack:GetChildren()) do
+        if t:IsA("Tool") and t.Name:lower() ~= "fists" then table.insert(items, t) end
     end
-    if char then
-        for _, t in ipairs(char:GetChildren()) do
-            if t:IsA("Tool") and t.Name:lower() ~= "fists" then table.insert(tools, t) end
-        end
+    for _, t in ipairs(char:GetChildren()) do
+        if t:IsA("Tool") and t.Name:lower() ~= "fists" then table.insert(items, t) end
     end
 
-    bb.Enabled = espInventoryEnabled and (#tools > 0)
-    
-    for _, tool in ipairs(tools) do
-        local name = getRealName(tool)
-        if name then
-            local lbl = Instance.new("TextLabel", container)
-            lbl.Size = UDim2.new(0, 180, 0, 14)
-            lbl.BackgroundTransparency = 1
-            lbl.Text = name
-            lbl.Font = Enum.Font.SourceSansBold
-            lbl.TextSize = 11
-            lbl.TextStrokeTransparency = 0.4
-            
-            local rarity = tool:GetAttribute("RarityName") or tool:GetAttribute("Rarity")
-            lbl.TextColor3 = RARITY_COLORS[rarity] or Color3.new(1, 1, 1)
-        end
+    for _, tool in ipairs(items) do
+        foundTools = foundTools + 1
+        local name = getCleanName(tool.Name)
+        
+        local lbl = Instance.new("TextLabel", container)
+        lbl.Size = UDim2.new(0, 180, 0, 14)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = name
+        lbl.Font = Enum.Font.SourceSansBold
+        lbl.TextSize = 11
+        lbl.TextStrokeTransparency = 0.5
+        
+        local rarity = tool:GetAttribute("RarityName") or tool:GetAttribute("Rarity")
+        lbl.TextColor3 = RARITY_COLORS[rarity] or Color3.new(1, 1, 1)
+        
+        if foundTools >= 6 then break end -- Limite pour éviter de flood l'écran
     end
+
+    bb.Enabled = (foundTools > 0)
 end
 
 local function createESP(p)
     if p == LocalPlayer then return end
     
     local function setup(char)
-        local root = char:WaitForChild("HumanoidRootPart", 15)
+        local root = char:WaitForChild("HumanoidRootPart", 5)
         if not root then return end
+        
         if BillboardCache[p] then BillboardCache[p]:Destroy() end
         
         local bb = Instance.new("BillboardGui", root)
-        bb.Name = "FixedUnderfootESP"
-        bb.Size = UDim2.new(0, 200, 0, 150)
-        bb.StudsOffset = Vector3.new(0, -3.5, 0) 
+        bb.Name = "FastInventory"
+        bb.Size = UDim2.new(0, 200, 0, 100)
+        bb.StudsOffset = Vector3.new(0, -3, 0) 
         bb.AlwaysOnTop = true
-        bb.MaxDistance = MAX_DISTANCE
         
         local cont = Instance.new("Frame", bb)
         cont.Name = "EspContainer"
@@ -141,137 +115,42 @@ local function createESP(p)
         cont.BackgroundTransparency = 1
         
         BillboardCache[p] = bb
-        updateESP(p)
-        
-        char.ChildAdded:Connect(function(child)
-            if child:IsA("Tool") then task.wait(0.1); updateESP(p) end
-        end)
-        char.ChildRemoved:Connect(function(child)
-            if child:IsA("Tool") then task.wait(0.1); updateESP(p) end
-        end)
-        
-        local backpack = p:WaitForChild("Backpack", 5)
-        if backpack then
-            backpack.ChildAdded:Connect(function() updateESP(p) end)
-            backpack.ChildRemoved:Connect(function() updateESP(p) end)
-        end
-
-        task.spawn(function()
-            while char.Parent and bb.Parent do
-                updateESP(p)
-                task.wait(UPDATE_INTERVAL)
-            end
-        end)
     end
     
     p.CharacterAdded:Connect(setup)
     if p.Character then setup(p.Character) end
 end
 
+-- === BOUCLE DE MISE À JOUR LÉGÈRE (TICK RATE RÉDUIT) ===
+task.spawn(function()
+    while true do
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                updateESP(p)
+            end
+        end
+        task.wait(0.5) -- On met à jour 2 fois par seconde au lieu de chaque frame
+    end
+end)
+
+-- === INITIALISATION ===
 for _, p in ipairs(Players:GetPlayers()) do createESP(p) end
 Players.PlayerAdded:Connect(createESP)
 
--- === INTERFACE ORIGINALE ===
+-- === INTERFACE ULTRA LITE ===
 local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
-ScreenGui.Name = "anouar777x_KING"
-ScreenGui.IgnoreGuiInset = true
-ScreenGui.ResetOnSpawn = false
+local Toggle = Instance.new("TextButton", ScreenGui)
+Toggle.Size = UDim2.new(0, 150, 0, 35)
+Toggle.Position = UDim2.new(0, 10, 0.5, 0)
+Toggle.Text = "Inventory ESP: ON"
+Toggle.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Toggle.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", Toggle)
 
-local MainFrame = Instance.new("Frame", ScreenGui)
-MainFrame.Size = UDim2.new(0.4, 0, 0.65, 0)
-MainFrame.Position = UDim2.new(0.3, 0, 0.18, 0)
-MainFrame.BackgroundColor3 = Color3.fromRGB(0,0,0)
-MainFrame.BorderSizePixel = 0
-MainFrame.Visible = false
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,8)
+Toggle.MouseButton1Click:Connect(function()
+    espInventoryEnabled = not espInventoryEnabled
+    Toggle.Text = "Inventory ESP: " .. (espInventoryEnabled and "ON" or "OFF")
+    Toggle.TextColor3 = espInventoryEnabled and Color3.new(0,1,0) or Color3.new(1,0,0)
+end)
 
-local ProtectedLabel = Instance.new("TextLabel", MainFrame)
-ProtectedLabel.Size = UDim2.new(0.8,0,0.08,0)
-ProtectedLabel.Position = UDim2.new(0.1,0,0.02,0)
-ProtectedLabel.BackgroundTransparency = 1
-ProtectedLabel.Text = "Protected: 0 | ID: " .. LocalPlayer.UserId .. " (30 slots)"
-ProtectedLabel.TextColor3 = Color3.fromRGB(0,255,0)
-ProtectedLabel.TextScaled = true
-ProtectedLabel.Font = Enum.Font.SourceSansBold
-
-local MainDrag = Instance.new("Frame", MainFrame)
-MainDrag.Size = UDim2.new(1,0,0.1,0)
-MainDrag.BackgroundTransparency = 1
-
-local ToggleButton = Instance.new("TextButton", ScreenGui)
-ToggleButton.Size = UDim2.new(0,100,0,40)
-ToggleButton.Position = UDim2.new(0.9,0,0.05,0)
-ToggleButton.BackgroundColor3 = Color3.fromRGB(255,0,0)
-ToggleButton.Text = "Open"
-ToggleButton.TextColor3 = Color3.fromRGB(0,0,0)
-ToggleButton.TextScaled = true
-Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(0,8)
-
-local ToggleDrag = Instance.new("Frame", ToggleButton)
-ToggleDrag.Size = UDim2.new(1,0,1,0)
-ToggleDrag.BackgroundTransparency = 1
-
-local ESPInventoryToggle = Instance.new("TextButton", MainFrame)
-ESPInventoryToggle.Size = UDim2.new(0.8,0,0.12,0)
-ESPInventoryToggle.Position = UDim2.new(0.1,0,0.12,0)
-ESPInventoryToggle.BackgroundColor3 = Color3.fromRGB(0,255,0)
-ESPInventoryToggle.Text = "ESP Inventory: ON"
-ESPInventoryToggle.TextScaled = true
-Instance.new("UICorner", ESPInventoryToggle).CornerRadius = UDim.new(0,8)
-
-local ESPToggle = Instance.new("TextButton", MainFrame)
-ESPToggle.Size = UDim2.new(0.8,0,0.12,0)
-ESPToggle.Position = UDim2.new(0.1,0,0.26,0)
-ESPToggle.BackgroundColor3 = Color3.fromRGB(255,0,0)
-ESPToggle.Text = "ESP: OFF"
-ESPToggle.TextScaled = true
-Instance.new("UICorner", ESPToggle).CornerRadius = UDim.new(0,8)
-
-local AimbotToggle = Instance.new("TextButton", MainFrame)
-AimbotToggle.Size = UDim2.new(0.8,0,0.12,0)
-AimbotToggle.Position = UDim2.new(0.1,0,0.40,0)
-AimbotToggle.BackgroundColor3 = Color3.fromRGB(255,0,0)
-AimbotToggle.Text = "Aimbot: OFF"
-AimbotToggle.TextScaled = true
-Instance.new("UICorner", AimbotToggle).CornerRadius = UDim.new(0,8)
-
-local WallcheckToggle = Instance.new("TextButton", MainFrame)
-WallcheckToggle.Size = UDim2.new(0.8,0,0.12,0)
-WallcheckToggle.Position = UDim2.new(0.1,0,0.54,0)
-WallcheckToggle.BackgroundColor3 = Color3.fromRGB(0,255,0)
-WallcheckToggle.Text = "Wallcheck: ON"
-WallcheckToggle.TextScaled = true
-WallcheckToggle.TextColor3 = Color3.new(1,1,1)
-Instance.new("UICorner", WallcheckToggle).CornerRadius = UDim.new(0,8)
-
-local FOVSlider = Instance.new("TextBox", MainFrame)
-FOVSlider.Size = UDim2.new(0.8,0,0.12,0)
-FOVSlider.Position = UDim2.new(0.1,0,0.68,0)
-FOVSlider.BackgroundColor3 = Color3.fromRGB(50,50,50)
-FOVSlider.Text = "FOV: 110"
-FOVSlider.TextColor3 = Color3.fromRGB(255,0,0)
-FOVSlider.TextScaled = true
-Instance.new("UICorner", FOVSlider).CornerRadius = UDim.new(0,8)
-
-local AimPartToggle = Instance.new("TextButton", MainFrame)
-AimPartToggle.Size = UDim2.new(0.8,0,0.12,0)
-AimPartToggle.Position = UDim2.new(0.1,0,0.82,0)
-AimPartToggle.BackgroundColor3 = Color3.fromRGB(100,100,255)
-AimPartToggle.Text = "Target: Head (fixed)"
-AimPartToggle.TextScaled = true
-AimPartToggle.TextColor3 = Color3.new(1,1,1)
-Instance.new("UICorner", AimPartToggle).CornerRadius = UDim.new(0,8)
-
-local FOVCircleToggle = Instance.new("TextButton", MainFrame)
-FOVCircleToggle.Size = UDim2.new(0.8,0,0.12,0)
-FOVCircleToggle.Position = UDim2.new(0.1,0,0.96,0)
-FOVCircleToggle.BackgroundColor3 = Color3.fromRGB(0,255,0)
-FOVCircleToggle.Text = "FOV Circle: ON"
-FOVCircleToggle.TextScaled = true
-FOVCircleToggle.TextColor3 = Color3.new(1,1,1)
-Instance.new("UICorner", FOVCircleToggle).CornerRadius = UDim.new(0,8)
-
--- Logique de Dragging et Keybinds (G et K) omise pour rester dans un seul bloc propre
--- mais les fonctions de base (ESP, Aimbot, Wallcheck) sont 100% actives.
-
-print("Script Block Spin chargé : Filtre ID Alpha-uniquement activé.")
+print("Script BlockSpin V2 (No Lag) chargé.")
