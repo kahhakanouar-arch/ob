@@ -2,18 +2,17 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
---// Configuration & Optimisation FPS
+--// Configuration
 local espInventoryEnabled = true 
 local MAX_DISTANCE = 2000 
 local UPDATE_INTERVAL = 1.5 
 local BillboardCache = {}
 local nameCache = {} 
 
--- Couleurs des raretés autorisées
+-- Couleurs autorisées (Common, Uncommon, Rare, Legendary, Omega)
 local RARITY_COLORS = {
     ["Common"] = Color3.fromRGB(255, 255, 255),
     ["Uncommon"] = Color3.fromRGB(99, 255, 52),
@@ -22,10 +21,10 @@ local RARITY_COLORS = {
     ["Omega"] = Color3.fromRGB(255, 20, 51)
 }
 
---// Nettoyage des noms et retrait des IDs
+--// Nettoyage des noms (Anti-ID)
 local function getRealName(t)
     if not t or not t.Name then return nil end
-    if t.Name:match("^%d+$") then return nil end -- Ignore si c'est un ID (chiffres uniquement)
+    if t.Name:match("^%d+$") then return nil end -- Ignore les IDs (ex: "123456")
     
     if nameCache[t.Name] then return nameCache[t.Name] end
     
@@ -36,7 +35,7 @@ local function getRealName(t)
     return finalName
 end
 
---// Mise à jour de l'inventaire ESP
+--// Mise à jour de l'ESP
 local function updateESP(p)
     local bb = BillboardCache[p]
     if not bb then return end
@@ -47,15 +46,6 @@ local function updateESP(p)
         return 
     end
     
-    local lChar = LocalPlayer.Character
-    if lChar and lChar:FindFirstChild("HumanoidRootPart") then
-        local dist = (lChar.HumanoidRootPart.Position - char.HumanoidRootPart.Position).Magnitude
-        if dist > MAX_DISTANCE then
-            bb.Enabled = false
-            return
-        end
-    end
-
     local container = bb:FindFirstChild("EspContainer")
     if not container then return end
     container:ClearAllChildren()
@@ -70,8 +60,8 @@ local function updateESP(p)
         if not folder then return end
         for _, t in ipairs(folder:GetChildren()) do
             if t:IsA("Tool") and t.Name:lower() ~= "fists" then
-                local rarity = t:GetAttribute("RarityName") or t:GetAttribute("Rarity")
-                if RARITY_COLORS[rarity] then -- Filtrage par rareté
+                -- On vérifie le nom d'abord
+                if getRealName(t) then
                     table.insert(tools, t)
                 end
             end
@@ -85,7 +75,10 @@ local function updateESP(p)
     
     for _, tool in ipairs(tools) do
         local name = getRealName(tool)
-        if name then
+        local rarity = tool:GetAttribute("RarityName") or tool:GetAttribute("Rarity") or "Common"
+        
+        -- On affiche si c'est une des raretés que tu as demandé
+        if RARITY_COLORS[rarity] or rarity == "Common" then
             local lbl = Instance.new("TextLabel", container)
             lbl.Size = UDim2.new(0, 180, 0, 14)
             lbl.BackgroundTransparency = 1
@@ -93,8 +86,6 @@ local function updateESP(p)
             lbl.Font = Enum.Font.SourceSansBold
             lbl.TextSize = 11
             lbl.TextStrokeTransparency = 0.4
-            
-            local rarity = tool:GetAttribute("RarityName") or tool:GetAttribute("Rarity")
             lbl.TextColor3 = RARITY_COLORS[rarity] or Color3.new(1, 1, 1)
         end
     end
@@ -106,7 +97,6 @@ local function createESP(p)
     local function setup(char)
         local root = char:WaitForChild("HumanoidRootPart", 10)
         if not root then return end
-        if BillboardCache[p] then BillboardCache[p]:Destroy() end
         
         local bb = Instance.new("BillboardGui", root)
         bb.Name = "Anouar_Inventory_ESP"
@@ -127,7 +117,7 @@ local function createESP(p)
     if p.Character then setup(p.Character) end
 end
 
---// Init
+--// Lancement
 for _, p in ipairs(Players:GetPlayers()) do createESP(p) end
 Players.PlayerAdded:Connect(createESP)
 
@@ -140,21 +130,18 @@ task.spawn(function()
     end
 end)
 
---// GUI (Anouar Style)
+--// GUI Minimal (Rouge/Noir)
 local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
-ScreenGui.Name = "ANOUAR777X_ESP"
-
 local Main = Instance.new("Frame", ScreenGui)
 Main.Size = UDim2.new(0, 200, 0, 90)
 Main.Position = UDim2.new(0.5, -100, 0.05, 0)
 Main.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-Main.BorderSizePixel = 0
 Instance.new("UICorner", Main)
 
 local Title = Instance.new("TextLabel", Main)
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
-Title.Text = "ANOUAR777X"
+Title.Text = "ANOUAR777X FIXED"
 Title.TextColor3 = Color3.new(1, 1, 1)
 Title.Font = Enum.Font.GothamBold
 Instance.new("UICorner", Title)
@@ -165,7 +152,6 @@ Btn.Position = UDim2.new(0.05, 0, 0.45, 0)
 Btn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
 Btn.Text = "Inventory ESP: ON"
 Btn.TextColor3 = Color3.new(1, 1, 1)
-Btn.Font = Enum.Font.Gotham
 Instance.new("UICorner", Btn)
 
 Btn.MouseButton1Click:Connect(function()
