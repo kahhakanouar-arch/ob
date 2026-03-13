@@ -4,11 +4,11 @@ local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
--- === CONFIGURATION OPTIMISÉE ===
+-- === CONFIGURATION ===
 local espInventoryEnabled = true 
 local MAX_DISTANCE = 1500 
 local BillboardCache = {}
-local cleanNameCache = {} -- Pour ne pas recalculer 100x la même chose
+local cleanNameCache = {}
 
 local RARITY_COLORS = {
     ["Common"] = Color3.fromRGB(255, 255, 255),
@@ -17,36 +17,44 @@ local RARITY_COLORS = {
     ["Epic"] = Color3.fromRGB(237, 44, 255),
     ["Legendary"] = Color3.fromRGB(255, 150, 0),
     ["Omega"] = Color3.fromRGB(255, 20, 51),
+    ["Mythic"] = Color3.fromRGB(255, 0, 0),
 }
 
--- === SYSTÈME ANTI-LAG (NETTOYAGE INSTANTANÉ) ===
-local function getCleanName(toolName)
-    if cleanNameCache[toolName] then return cleanNameCache[toolName] end
+-- === FONCTION DE NETTOYAGE INTELLIGENTE (ANTI-LAG) ===
+local function getCleanName(tool)
+    local rawName = tool.Name
+    if cleanNameCache[rawName] then return cleanNameCache[rawName] end
 
-    -- On retire les IDs (chiffres), les points, et les codes de fin
-    -- Exemple: "Leopard_827364" -> "Leopard"
-    local clean = toolName:gsub("%d+", ""):gsub("[%p%c]", " "):gsub("%s+", " "):match("^%s*(.-)%s*$")
+    -- 1. On essaie de voir si le jeu a stocké le vrai nom dans un attribut (souvent le cas dans Block Spin)
+    local attrName = tool:GetAttribute("ItemName") or tool:GetAttribute("DisplayName")
+    if attrName and attrName ~= "" then
+        cleanNameCache[rawName] = attrName
+        return attrName
+    end
+
+    -- 2. Sinon, on nettoie le nom : on enlève les chiffres et les IDs à la fin
+    -- Exemple: "Leopard_12345" devient "Leopard"
+    local clean = rawName:gsub("%d+", ""):gsub("_", " "):gsub("[%p%c]", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
     
-    if #clean < 2 then clean = "Unknown Item" end
-    
-    cleanNameCache[toolName] = clean
+    -- Si le nom est trop bizarre ou vide, on garde le nom original mais sans les chiffres
+    if not clean or #clean < 2 then
+        clean = rawName:gsub("%d+", "")
+    end
+
+    cleanNameCache[rawName] = clean
     return clean
 end
 
 local function updateESP(p)
     local bb = BillboardCache[p]
-    if not bb or not espInventoryEnabled then 
-        if bb then bb.Enabled = false end
-        return 
-    end
+    if not bb then return end
     
     local char = p.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then 
+    if not char or not char:FindFirstChild("HumanoidRootPart") or not espInventoryEnabled then 
         bb.Enabled = false
         return 
     end
     
-    -- Check Distance simple pour économiser les FPS
     local dist = (Camera.CFrame.Position - char.HumanoidRootPart.Position).Magnitude
     if dist > MAX_DISTANCE then
         bb.Enabled = false
@@ -62,10 +70,8 @@ local function updateESP(p)
     layout.VerticalAlignment = Enum.VerticalAlignment.Bottom 
     layout.Padding = UDim.new(0, 2)
 
-    -- Scan rapide uniquement du personnage et du backpack (pas de ReplicatedStorage)
-    local foundTools = 0
     local items = {}
-    
+    -- On check le Backpack + le Character
     for _, t in ipairs(p.Backpack:GetChildren()) do
         if t:IsA("Tool") and t.Name:lower() ~= "fists" then table.insert(items, t) end
     end
@@ -74,39 +80,36 @@ local function updateESP(p)
     end
 
     for _, tool in ipairs(items) do
-        foundTools = foundTools + 1
-        local name = getCleanName(tool.Name)
+        local name = getCleanName(tool)
         
         local lbl = Instance.new("TextLabel", container)
         lbl.Size = UDim2.new(0, 180, 0, 14)
         lbl.BackgroundTransparency = 1
         lbl.Text = name
         lbl.Font = Enum.Font.SourceSansBold
-        lbl.TextSize = 11
-        lbl.TextStrokeTransparency = 0.5
+        lbl.TextSize = 12
+        lbl.TextStrokeTransparency = 0.3
         
-        local rarity = tool:GetAttribute("RarityName") or tool:GetAttribute("Rarity")
+        -- Couleur par rareté
+        local rarity = tool:GetAttribute("Rarity") or tool:GetAttribute("RarityName")
         lbl.TextColor3 = RARITY_COLORS[rarity] or Color3.new(1, 1, 1)
-        
-        if foundTools >= 6 then break end -- Limite pour éviter de flood l'écran
     end
 
-    bb.Enabled = (foundTools > 0)
+    bb.Enabled = (#items > 0)
 end
 
 local function createESP(p)
     if p == LocalPlayer then return end
     
     local function setup(char)
-        local root = char:WaitForChild("HumanoidRootPart", 5)
+        local root = char:WaitForChild("HumanoidRootPart", 10)
         if not root then return end
-        
         if BillboardCache[p] then BillboardCache[p]:Destroy() end
         
         local bb = Instance.new("BillboardGui", root)
-        bb.Name = "FastInventory"
+        bb.Name = "InvESP"
         bb.Size = UDim2.new(0, 200, 0, 100)
-        bb.StudsOffset = Vector3.new(0, -3, 0) 
+        bb.StudsOffset = Vector3.new(0, -3.5, 0) 
         bb.AlwaysOnTop = true
         
         local cont = Instance.new("Frame", bb)
@@ -121,36 +124,32 @@ local function createESP(p)
     if p.Character then setup(p.Character) end
 end
 
--- === BOUCLE DE MISE À JOUR LÉGÈRE (TICK RATE RÉDUIT) ===
+-- === BOUCLE DE MISE À JOUR OPTIMISÉE (0 LAG) ===
 task.spawn(function()
     while true do
         for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then
-                updateESP(p)
-            end
+            if p ~= LocalPlayer then updateESP(p) end
         end
-        task.wait(0.5) -- On met à jour 2 fois par seconde au lieu de chaque frame
+        task.wait(0.8) -- Mise à jour fluide sans tuer les FPS
     end
 end)
 
--- === INITIALISATION ===
 for _, p in ipairs(Players:GetPlayers()) do createESP(p) end
 Players.PlayerAdded:Connect(createESP)
 
--- === INTERFACE ULTRA LITE ===
+-- === UI DE TOGGLE ===
 local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
-local Toggle = Instance.new("TextButton", ScreenGui)
-Toggle.Size = UDim2.new(0, 150, 0, 35)
-Toggle.Position = UDim2.new(0, 10, 0.5, 0)
-Toggle.Text = "Inventory ESP: ON"
-Toggle.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-Toggle.TextColor3 = Color3.new(1,1,1)
-Instance.new("UICorner", Toggle)
+local Btn = Instance.new("TextButton", ScreenGui)
+Btn.Size = UDim2.new(0, 120, 0, 40)
+Btn.Position = UDim2.new(0, 10, 0.45, 0)
+Btn.Text = "Inventory ESP"
+Btn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Btn.TextColor3 = Color3.new(1, 1, 1)
+Instance.new("UICorner", Btn)
 
-Toggle.MouseButton1Click:Connect(function()
+Btn.MouseButton1Click:Connect(function()
     espInventoryEnabled = not espInventoryEnabled
-    Toggle.Text = "Inventory ESP: " .. (espInventoryEnabled and "ON" or "OFF")
-    Toggle.TextColor3 = espInventoryEnabled and Color3.new(0,1,0) or Color3.new(1,0,0)
+    Btn.TextColor3 = espInventoryEnabled and Color3.new(0, 1, 0) or Color3.new(1, 0, 0)
 end)
 
-print("Script BlockSpin V2 (No Lag) chargé.")
+print("Block Spin ESP V3 chargé - Noms corrigés & No Lag")
