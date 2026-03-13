@@ -1,17 +1,13 @@
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local StarterPack = game:GetService("StarterPack")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
 -- === CONFIGURATION ===
 local espInventoryEnabled = true 
 local MAX_DISTANCE = 1500 
-local UPDATE_INTERVAL = 1.0 
 local BillboardCache = {}
-local cleanNameCache = {} 
+local nameCache = {} 
 
 local RARITY_COLORS = {
     ["Common"] = Color3.fromRGB(255, 255, 255),
@@ -23,32 +19,52 @@ local RARITY_COLORS = {
     ["Mythic"] = Color3.fromRGB(255, 0, 0),
 }
 
--- === SYSTÈME DE NETTOYAGE DES NOMS (SANS IDS) ===
-local function getRealItemName(tool)
+-- === LE NETTOYEUR DE NOM RADICAL ===
+local function getRealName(tool)
     if not tool or not tool.Name then return nil end
-    local rawName = tool.Name
-    if cleanNameCache[rawName] then return cleanNameCache[rawName] end
-
-    local attr = tool:GetAttribute("ItemName") or tool:GetAttribute("DisplayName")
-    if attr and tostring(attr) ~= "" then
-        cleanNameCache[rawName] = tostring(attr)
-        return tostring(attr)
+    
+    -- 1. On cherche d'abord un nom d'affichage propre dans les réglages du jeu
+    local displayName = tool:GetAttribute("ItemName") or tool:GetAttribute("DisplayName")
+    if displayName and tostring(displayName) ~= "" then
+        return tostring(displayName)
     end
 
-    -- Supprime les chiffres (IDs) et nettoie le texte
-    local clean = rawName:gsub("%d+", ""):gsub("[%p%c]", " "):gsub("%s+", " "):match("^%s*(.-)%s*$")
-    local finalName = (clean ~= "" and #clean > 1) and clean or rawName
-    cleanNameCache[rawName] = finalName
-    return finalName
+    -- 2. SUPPRESSION TOTALE DES IDS (On ne garde que les lettres A-Z)
+    -- Cette ligne retire TOUS les chiffres et symboles
+    local cleanName = tool.Name:gsub("[%d%p%c%s]+", " "):match("^%s*(.-)%s*$")
+    
+    -- Si le nom devient vide, on remet le nom original sans les chiffres
+    if not cleanName or #cleanName < 1 then
+        cleanName = tool.Name:gsub("%d+", "")
+    end
+    
+    return cleanName
 end
 
--- === MISE À JOUR ESP INVENTAIRE ===
-local function updateInventoryESP(p)
+-- === DÉTECTION DE LA COULEUR (FIX) ===
+local function getRarityColor(tool)
+    -- On cherche la rareté partout (Attributs ou Valeurs internes)
+    local rarity = tool:GetAttribute("Rarity") or tool:GetAttribute("RarityName")
+    
+    if not rarity then
+        local folder = tool:FindFirstChild("Rarity") or tool:FindFirstChild("Settings")
+        if folder and folder:FindFirstChild("Rarity") then
+            rarity = folder.Rarity.Value
+        end
+    end
+    
+    return RARITY_COLORS[tostring(rarity)] or Color3.new(1, 1, 1) -- Blanc si non trouvé
+end
+
+local function updateESP(p)
     local bb = BillboardCache[p]
-    if not bb then return end
+    if not bb or not espInventoryEnabled then 
+        if bb then bb.Enabled = false end
+        return 
+    end
     
     local char = p.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") or not espInventoryEnabled then 
+    if not char or not char:FindFirstChild("HumanoidRootPart") then 
         bb.Enabled = false
         return 
     end
@@ -60,39 +76,34 @@ local function updateInventoryESP(p)
     local layout = Instance.new("UIListLayout", container)
     layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     layout.VerticalAlignment = Enum.VerticalAlignment.Bottom 
-    layout.Padding = UDim.new(0, 2)
 
     local tools = {}
-    local bp = p:FindFirstChild("Backpack")
-    if bp then
-        for _, t in ipairs(bp:GetChildren()) do
-            if t:IsA("Tool") and t.Name:lower() ~= "fists" then table.insert(tools, t) end
-        end
+    for _, t in ipairs(p.Backpack:GetChildren()) do
+        if t:IsA("Tool") and t.Name:lower() ~= "fists" then table.insert(tools, t) end
     end
     for _, t in ipairs(char:GetChildren()) do
         if t:IsA("Tool") and t.Name:lower() ~= "fists" then table.insert(tools, t) end
     end
 
     for _, tool in ipairs(tools) do
-        local name = getRealItemName(tool)
-        if name then
-            local lbl = Instance.new("TextLabel", container)
-            lbl.Size = UDim2.new(0, 180, 0, 15)
-            lbl.BackgroundTransparency = 1
-            lbl.Text = name
-            lbl.Font = Enum.Font.SourceSansBold
-            lbl.TextSize = 12
-            lbl.TextStrokeTransparency = 0.3
-            
-            local rarity = tool:GetAttribute("Rarity") or tool:GetAttribute("RarityName") or "Common"
-            lbl.TextColor3 = RARITY_COLORS[rarity] or Color3.new(1, 1, 1)
-        end
+        local name = getRealName(tool)
+        local color = getRarityColor(tool)
+        
+        local lbl = Instance.new("TextLabel", container)
+        lbl.Size = UDim2.new(0, 200, 0, 16)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = name
+        lbl.TextColor3 = color -- Applique enfin la couleur !
+        lbl.Font = Enum.Font.SourceSansBold
+        lbl.TextSize = 14
+        lbl.TextStrokeTransparency = 0.2
     end
+    
     bb.Enabled = (#tools > 0)
 end
 
--- === CRÉATION DES BILLBOARDS ===
-local function createInventoryESP(p)
+-- === INITIALISATION ===
+local function createESP(p)
     if p == LocalPlayer then return end
     local function setup(char)
         local root = char:WaitForChild("HumanoidRootPart", 10)
@@ -100,9 +111,9 @@ local function createInventoryESP(p)
         if BillboardCache[p] then BillboardCache[p]:Destroy() end
         
         local bb = Instance.new("BillboardGui", root)
-        bb.Name = "InvESP"
+        bb.Name = "InventoryFix"
         bb.Size = UDim2.new(0, 200, 0, 100)
-        bb.StudsOffset = Vector3.new(0, -3.8, 0)
+        bb.StudsOffset = Vector3.new(0, -4, 0) -- Sous les pieds pour pas gêner
         bb.AlwaysOnTop = true
         
         local cont = Instance.new("Frame", bb)
@@ -115,65 +126,15 @@ local function createInventoryESP(p)
     if p.Character then setup(p.Character) end
 end
 
--- === LANCEUR DES BOUCLES ===
+-- Boucle 1 seconde (Zéro Lag)
 task.spawn(function()
     while true do
         for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then updateInventoryESP(p) end
+            if p ~= LocalPlayer then updateESP(p) end
         end
-        task.wait(UPDATE_INTERVAL)
+        task.wait(1)
     end
 end)
 
-for _, p in ipairs(Players:GetPlayers()) do createInventoryESP(p) end
-Players.PlayerAdded:Connect(createInventoryESP)
-
--- === INTERFACE (MENU) ===
-local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
-ScreenGui.Name = "KingMenu_Fixed"
-
-local MainFrame = Instance.new("Frame", ScreenGui)
-MainFrame.Size = UDim2.new(0, 250, 0, 300)
-MainFrame.Position = UDim2.new(0.5, -125, 0.5, -150)
-MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-MainFrame.Visible = true -- S'affiche par défaut maintenant
-Instance.new("UICorner", MainFrame)
-
-local Title = Instance.new("TextLabel", MainFrame)
-Title.Size = UDim2.new(1, 0, 0, 40)
-Title.Text = "ANOUAR KING MENU"
-Title.TextColor3 = Color3.new(1, 1, 1)
-Title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-Title.Font = Enum.Font.SourceSansBold
-Title.TextSize = 18
-
-local ToggleBtn = Instance.new("TextButton", MainFrame)
-ToggleBtn.Size = UDim2.new(0.9, 0, 0, 40)
-ToggleBtn.Position = UDim2.new(0.05, 0, 0.2, 0)
-ToggleBtn.Text = "ESP Inventory: ON"
-ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-ToggleBtn.TextColor3 = Color3.new(1, 1, 1)
-
-ToggleBtn.MouseButton1Click:Connect(function()
-    espInventoryEnabled = not espInventoryEnabled
-    ToggleBtn.Text = "ESP Inventory: " .. (espInventoryEnabled and "ON" or "OFF")
-    ToggleBtn.BackgroundColor3 = espInventoryEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 0, 0)
-end)
-
--- Rendre le menu draggable
-local dragStart, startPos
-MainFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragStart = input.Position
-        startPos = MainFrame.Position
-    end
-end)
-MainFrame.InputChanged:Connect(function(input)
-    if dragStart and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then dragStart = nil end
-end)
+for _, p in ipairs(Players:GetPlayers()) do createESP(p) end
+Players.PlayerAdded:Connect(createESP)
