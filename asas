@@ -9,7 +9,7 @@ local LocalPlayer = Players.LocalPlayer
 -- === CONFIGURATION ===
 local espInventoryEnabled = true 
 local MAX_DISTANCE = 2000 
-local UPDATE_INTERVAL = 2.0 
+local UPDATE_INTERVAL = 2.1 
 local BillboardCache = {}
 local nameCache = {} 
 
@@ -27,10 +27,11 @@ local function getRealName(t)
     if nameCache[t.Name] then return nameCache[t.Name] end
     
     local h = t:FindFirstChild("Handle")
-    local clean = t.Name:gsub("%d+", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
+    -- Nettoyage intelligent : on garde les chiffres pour les cannes à pêche
+    local clean = t.Name:gsub("Handle", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
     local fallbackName = (clean ~= "" and clean ~= "Tool") and clean or t.Name
 
-    for _, folder in ipairs({ReplicatedStorage:FindFirstChild("Items"), StarterPack}) do
+    for _, folder in ipairs({ReplicatedStorage:FindFirstChild("Items"), ReplicatedStorage:FindFirstChild("Tools"), StarterPack}) do
         if folder then
             for _, item in ipairs(folder:GetDescendants()) do
                 if item:IsA("Tool") and item:FindFirstChild("Handle") then
@@ -275,7 +276,7 @@ Instance.new("UICorner", PlayerListFrame).CornerRadius = UDim.new(0,8)
 local PlayerListLayout = Instance.new("UIListLayout", PlayerListFrame)
 PlayerListLayout.Padding = UDim.new(0,4)
 
--- Variables
+-- === LOGIQUE ===
 local espEnabledStatus = false
 local AimbotOn = false
 local FOVRadius = 110
