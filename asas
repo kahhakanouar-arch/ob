@@ -8,7 +8,7 @@ local LocalPlayer = Players.LocalPlayer
 
 -- === CONFIGURATION ===
 local espInventoryEnabled = true 
-local MAX_DISTANCE = 2001 
+local MAX_DISTANCE = 2000 
 local UPDATE_INTERVAL = 5 
 local BillboardCache = {}
 local nameCache = {} 
@@ -22,59 +22,42 @@ local RARITY_COLORS = {
     ["Omega"] = Color3.fromRGB(255, 20, 51),
 }
 
--- === FISHING RODS DÉTECTION SPÉCIALE (ultra renforcée) ===
-local FISHING_ROD_NAMES = {
-    ["regular"]   = "Regular Fishing Rod",
-    ["basic"]     = "Regular Fishing Rod",
-    ["pro"]       = "Pro Fishing Rod",
-    ["advanced"]  = "Advanced Fishing Rod",
-    ["ultimate"]  = "Ultimate Fishing Rod",
-    ["ult"]       = "Ultimate Fishing Rod",
-}
-
 local function getRealName(t)
     if not t or not t.Name then return nil end
     
     local originalName = t.Name
     local lowerName = originalName:lower()
 
-    -- === DÉTECTION ULTRA FORTE (marche dans le backpack ET dans la main) ===
-    -- Nettoyage des IDs/nombres qui apparaissent quand la tool est équipée
-    local cleaned = lowerName:gsub("%d+", ""):gsub("_%d+", ""):gsub("[%s_]+", " ")
+    -- Nettoyage agressif des suffixes que Roblox ajoute quand l'outil est équipé
+    local cleaned = lowerName
+        :gsub("%d+$", "")               -- chiffres à la fin
+        :gsub("_%d+$", "")              -- _12345 à la fin
+        :gsub("%s*%d+%s*$", "")         -- espaces + chiffres à la fin
+        :gsub("[%s_]+", " ")            -- multiples espaces/underscores → un seul espace
+        :gsub("([^%w%s])", "")          -- enlève caractères spéciaux non désirés
+        :match("^%s*(.-)%s*$")          -- trim
 
-    if cleaned:find("fishing") or cleaned:find("rod") or cleaned:find("canne") then
+    -- Priorité maximale : détection fishing rods SANS passer par le cache
+    if cleaned:find("fishing") or cleaned:find("rod") or cleaned:find("canne") or cleaned:find("pêche") then
         if cleaned:find("ultimate") or cleaned:find("ult") then
-            nameCache[originalName] = "Ultimate Fishing Rod"
             return "Ultimate Fishing Rod"
         elseif cleaned:find("advanced") then
-            nameCache[originalName] = "Advanced Fishing Rod"
             return "Advanced Fishing Rod"
         elseif cleaned:find("pro") then
-            nameCache[originalName] = "Pro Fishing Rod"
             return "Pro Fishing Rod"
         else
-            nameCache[originalName] = "Regular Fishing Rod"
             return "Regular Fishing Rod"
         end
     end
 
-    -- Vérification rapide avec le tableau (au cas où)
-    for keyword, niceName in pairs(FISHING_ROD_NAMES) do
-        if lowerName:find(keyword) then
-            nameCache[originalName] = niceName
-            return niceName
-        end
-    end
-
-    -- === CODE ORIGINAL (pour tous les autres outils) ===
+    -- Pour les autres outils → cache + détection originale
     if nameCache[originalName] then 
         return nameCache[originalName] 
     end
     
     local h = t:FindFirstChild("Handle")
-    local clean = originalName:gsub("%d+", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
-    local fallbackName = (clean ~= "" and clean ~= "Tool") and clean or originalName
-
+    local fallbackName = cleaned
+    
     for _, folder in ipairs({ReplicatedStorage:FindFirstChild("Items"), StarterPack}) do
         if folder then
             for _, item in ipairs(folder:GetDescendants()) do
@@ -99,6 +82,7 @@ local function getRealName(t)
         end
     end
     
+    nameCache[originalName] = fallbackName
     return fallbackName
 end
 
