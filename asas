@@ -8,7 +8,7 @@ local LocalPlayer = Players.LocalPlayer
 
 -- === CONFIGURATION ===
 local espInventoryEnabled = true 
-local MAX_DISTANCE = 2000 
+local MAX_DISTANCE = 2001 
 local UPDATE_INTERVAL = 5 
 local BillboardCache = {}
 local nameCache = {} 
@@ -22,7 +22,7 @@ local RARITY_COLORS = {
     ["Omega"] = Color3.fromRGB(255, 20, 51),
 }
 
--- === FISHING RODS DÉTECTION SPÉCIALE ===
+-- === FISHING RODS DÉTECTION SPÉCIALE (ultra renforcée) ===
 local FISHING_ROD_NAMES = {
     ["regular"]   = "Regular Fishing Rod",
     ["basic"]     = "Regular Fishing Rod",
@@ -37,29 +37,36 @@ local function getRealName(t)
     
     local originalName = t.Name
     local lowerName = originalName:lower()
-    
-    -- === DÉTECTION ULTRA RAPIDE DES FISHING RODS ===
+
+    -- === DÉTECTION ULTRA FORTE (marche dans le backpack ET dans la main) ===
+    -- Nettoyage des IDs/nombres qui apparaissent quand la tool est équipée
+    local cleaned = lowerName:gsub("%d+", ""):gsub("_%d+", ""):gsub("[%s_]+", " ")
+
+    if cleaned:find("fishing") or cleaned:find("rod") or cleaned:find("canne") then
+        if cleaned:find("ultimate") or cleaned:find("ult") then
+            nameCache[originalName] = "Ultimate Fishing Rod"
+            return "Ultimate Fishing Rod"
+        elseif cleaned:find("advanced") then
+            nameCache[originalName] = "Advanced Fishing Rod"
+            return "Advanced Fishing Rod"
+        elseif cleaned:find("pro") then
+            nameCache[originalName] = "Pro Fishing Rod"
+            return "Pro Fishing Rod"
+        else
+            nameCache[originalName] = "Regular Fishing Rod"
+            return "Regular Fishing Rod"
+        end
+    end
+
+    -- Vérification rapide avec le tableau (au cas où)
     for keyword, niceName in pairs(FISHING_ROD_NAMES) do
         if lowerName:find(keyword) then
             nameCache[originalName] = niceName
             return niceName
         end
     end
-    
-    -- Détection large "fishing rod"
-    if lowerName:find("fishing") or lowerName:find("rod") or lowerName:find("canne") then
-        if lowerName:find("pro") then
-            return "Pro Fishing Rod"
-        elseif lowerName:find("advanced") then
-            return "Advanced Fishing Rod"
-        elseif lowerName:find("ultimate") or lowerName:find("ult") then
-            return "Ultimate Fishing Rod"
-        else
-            return "Regular Fishing Rod"
-        end
-    end
 
-    -- === CODE ORIGINAL (gardé pour tous les autres outils) ===
+    -- === CODE ORIGINAL (pour tous les autres outils) ===
     if nameCache[originalName] then 
         return nameCache[originalName] 
     end
@@ -325,7 +332,7 @@ local AimbotOn = false
 local FOVRadius = 110
 local WallCheckEnabled = true
 local FOVCircleVisible = true
-local FOVCircleForcedOff = false   -- ← ajouté pour la touche K
+local FOVCircleForcedOff = false
 local ProtectedPlayers = {}
 local PlayerButtons = {}
 local AIM_SMOOTHNESS = 0.8
