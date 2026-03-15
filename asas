@@ -87,7 +87,7 @@ local function updateESP(p)
             lbl.Size = UDim2.new(0, 200, 0, 16)
             lbl.BackgroundTransparency = 1
             lbl.Text = name
-            lbl.TextColor3 = RARITY_COLORS[rarity] or Color3.new(1, 1, 1)  -- ← couleur appliquée ici
+            lbl.TextColor3 = RARITY_COLORS[rarity] or Color3.new(1, 1, 1)
             lbl.Font = Enum.Font.SourceSansBold
             lbl.TextSize = 13
             lbl.TextStrokeTransparency = 0.3
