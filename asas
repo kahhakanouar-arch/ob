@@ -6,10 +6,9 @@ local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
--- === CONFIGURATION ===
 local espInventoryEnabled = true 
 local MAX_DISTANCE = 2000 
-local UPDATE_INTERVAL = 1 
+local UPDATE_INTERVAL = 5 
 local BillboardCache = {}
 local nameCache = {} 
 
@@ -22,7 +21,6 @@ local RARITY_COLORS = {
     ["Omega"] = Color3.fromRGB(255, 20, 51),
 }
 
--- === SPECIAL TOOL NAMES (fix Fishing Rod + tous les rods de BlockSpin) ===
 local SPECIAL_TOOL_NAMES = {
     ["FishingRod"] = "Fishing Rod",
     ["Rod"] = "Fishing Rod",
@@ -42,24 +40,27 @@ local function getRealName(t)
     
     local toolName = t.Name
     
-    -- Priorité 1 : Noms spéciaux (Fishing Rods)
     if SPECIAL_TOOL_NAMES[toolName] then
         return SPECIAL_TOOL_NAMES[toolName]
     end
     
-    -- Priorité 2 : Nettoyage automatique CamelCase
+    -- Si c'est un pur ID numérique → on affiche "Item" + les 4-5 derniers chiffres
+    if toolName:match("^%d+$") then
+        return "Item "..toolName:sub(-5)
+    end
+    
     local cleanName = toolName
-        :gsub("(%l)(%u)", "%1 %2")   -- FishingRod → Fishing Rod
-        :gsub("%d+", "")             -- Supprime les chiffres
-        :gsub("Tool$", "")           -- Supprime "Tool" à la fin
-        :gsub("%s+", " ")            -- Nettoie espaces
-        :match("^%s*(.-)%s*$")       -- Trim
+        :gsub("(%l)(%u)", "%1 %2")
+        :gsub("%d+", "")
+        :gsub("Tool$", "")
+        :gsub("Clone_.+", "")
+        :gsub("%s+", " ")
+        :match("^%s*(.-)%s*$")
     
     if cleanName and cleanName ~= "" and cleanName ~= "Tool" and #cleanName > 2 then
         return cleanName
     end
     
-    -- Fallback ultime
     return toolName
 end
 
@@ -116,7 +117,7 @@ local function updateESP(p)
             lbl.TextSize = 11
             lbl.TextStrokeTransparency = 0.4
             
-            local rarity = tool:GetAttribute("RarityName") or tool:GetAttribute("Rarity")
+            local rarity = tool:GetAttribute("RarityName") or tool:GetAttribute("Rarity") or "?"
             lbl.TextColor3 = RARITY_COLORS[rarity] or Color3.new(1, 1, 1)
         end
     end
@@ -175,22 +176,21 @@ end
 for _, p in ipairs(Players:GetPlayers()) do createESP(p) end
 Players.PlayerAdded:Connect(createESP)
 
--- === INTERFACE === (le reste du script est inchangé)
 local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
 ScreenGui.Name = "anouar777x_KING"
 ScreenGui.IgnoreGuiInset = true
 ScreenGui.ResetOnSpawn = false
 
 local MainFrame = Instance.new("Frame", ScreenGui)
-MainFrame.Size = UDim2.new(0.4, 0, 0.65, 0)
-MainFrame.Position = UDim2.new(0.3, 0, 0.18, 0)
+MainFrame.Size = UDim2.new(0.4, 0, 0.85, 0)
+MainFrame.Position = UDim2.new(0.3, 0, 0.08, 0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(0,0,0)
 MainFrame.BorderSizePixel = 0
 MainFrame.Visible = false
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,8)
 
 local ProtectedLabel = Instance.new("TextLabel", MainFrame)
-ProtectedLabel.Size = UDim2.new(0.8,0,0.08,0)
+ProtectedLabel.Size = UDim2.new(0.8,0,0.07,0)
 ProtectedLabel.Position = UDim2.new(0.1,0,0.02,0)
 ProtectedLabel.BackgroundTransparency = 1
 ProtectedLabel.Text = "Protected: 0 | ID: " .. LocalPlayer.UserId .. " (30 slots)"
@@ -199,7 +199,7 @@ ProtectedLabel.TextScaled = true
 ProtectedLabel.Font = Enum.Font.SourceSansBold
 
 local MainDrag = Instance.new("Frame", MainFrame)
-MainDrag.Size = UDim2.new(1,0,0.1,0)
+MainDrag.Size = UDim2.new(1,0,0.08,0)
 MainDrag.BackgroundTransparency = 1
 
 local ToggleButton = Instance.new("TextButton", ScreenGui)
@@ -210,48 +210,46 @@ ToggleButton.Text = "Open"
 ToggleButton.TextColor3 = Color3.fromRGB(0,0,0)
 ToggleButton.TextScaled = true
 Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(0,8)
-ToggleButton.Visible = true
 
 local ToggleDrag = Instance.new("Frame", ToggleButton)
 ToggleDrag.Size = UDim2.new(1,0,1,0)
 ToggleDrag.BackgroundTransparency = 1
 
 local ESPInventoryToggle = Instance.new("TextButton", MainFrame)
-ESPInventoryToggle.Size = UDim2.new(0.8,0,0.12,0)
-ESPInventoryToggle.Position = UDim2.new(0.1,0,0.12,0)
+ESPInventoryToggle.Size = UDim2.new(0.8,0,0.085,0)
+ESPInventoryToggle.Position = UDim2.new(0.1,0,0.11,0)
 ESPInventoryToggle.BackgroundColor3 = Color3.fromRGB(0,255,0)
 ESPInventoryToggle.Text = "ESP Inventory: ON"
 ESPInventoryToggle.TextScaled = true
 Instance.new("UICorner", ESPInventoryToggle).CornerRadius = UDim.new(0,8)
 
 local ESPToggle = Instance.new("TextButton", MainFrame)
-ESPToggle.Size = UDim2.new(0.8,0,0.12,0)
-ESPToggle.Position = UDim2.new(0.1,0,0.26,0)
+ESPToggle.Size = UDim2.new(0.8,0,0.085,0)
+ESPToggle.Position = UDim2.new(0.1,0,0.205,0)
 ESPToggle.BackgroundColor3 = Color3.fromRGB(255,0,0)
 ESPToggle.Text = "ESP: OFF"
 ESPToggle.TextScaled = true
 Instance.new("UICorner", ESPToggle).CornerRadius = UDim.new(0,8)
 
 local AimbotToggle = Instance.new("TextButton", MainFrame)
-AimbotToggle.Size = UDim2.new(0.8,0,0.12,0)
-AimbotToggle.Position = UDim2.new(0.1,0,0.40,0)
+AimbotToggle.Size = UDim2.new(0.8,0,0.085,0)
+AimbotToggle.Position = UDim2.new(0.1,0,0.30,0)
 AimbotToggle.BackgroundColor3 = Color3.fromRGB(255,0,0)
 AimbotToggle.Text = "Aimbot: OFF"
 AimbotToggle.TextScaled = true
 Instance.new("UICorner", AimbotToggle).CornerRadius = UDim.new(0,8)
 
 local WallcheckToggle = Instance.new("TextButton", MainFrame)
-WallcheckToggle.Size = UDim2.new(0.8,0,0.12,0)
-WallcheckToggle.Position = UDim2.new(0.1,0,0.54,0)
+WallcheckToggle.Size = UDim2.new(0.8,0,0.085,0)
+WallcheckToggle.Position = UDim2.new(0.1,0,0.395,0)
 WallcheckToggle.BackgroundColor3 = Color3.fromRGB(0,255,0)
 WallcheckToggle.Text = "Wallcheck: ON"
 WallcheckToggle.TextScaled = true
-WallcheckToggle.TextColor3 = Color3.new(1,1,1)
 Instance.new("UICorner", WallcheckToggle).CornerRadius = UDim.new(0,8)
 
 local FOVSlider = Instance.new("TextBox", MainFrame)
-FOVSlider.Size = UDim2.new(0.8,0,0.12,0)
-FOVSlider.Position = UDim2.new(0.1,0,0.68,0)
+FOVSlider.Size = UDim2.new(0.8,0,0.085,0)
+FOVSlider.Position = UDim2.new(0.1,0,0.49,0)
 FOVSlider.BackgroundColor3 = Color3.fromRGB(50,50,50)
 FOVSlider.Text = "FOV: 110"
 FOVSlider.TextColor3 = Color3.fromRGB(255,0,0)
@@ -259,26 +257,24 @@ FOVSlider.TextScaled = true
 Instance.new("UICorner", FOVSlider).CornerRadius = UDim.new(0,8)
 
 local AimPartToggle = Instance.new("TextButton", MainFrame)
-AimPartToggle.Size = UDim2.new(0.8,0,0.12,0)
-AimPartToggle.Position = UDim2.new(0.1,0,0.82,0)
+AimPartToggle.Size = UDim2.new(0.8,0,0.085,0)
+AimPartToggle.Position = UDim2.new(0.1,0,0.585,0)
 AimPartToggle.BackgroundColor3 = Color3.fromRGB(100,100,255)
 AimPartToggle.Text = "Target: Head (fixed)"
 AimPartToggle.TextScaled = true
-AimPartToggle.TextColor3 = Color3.new(1,1,1)
 Instance.new("UICorner", AimPartToggle).CornerRadius = UDim.new(0,8)
 
 local FOVCircleToggle = Instance.new("TextButton", MainFrame)
-FOVCircleToggle.Size = UDim2.new(0.8,0,0.12,0)
-FOVCircleToggle.Position = UDim2.new(0.1,0,0.96,0)
+FOVCircleToggle.Size = UDim2.new(0.8,0,0.085,0)
+FOVCircleToggle.Position = UDim2.new(0.1,0,0.68,0)
 FOVCircleToggle.BackgroundColor3 = Color3.fromRGB(0,255,0)
 FOVCircleToggle.Text = "FOV Circle: ON"
 FOVCircleToggle.TextScaled = true
-FOVCircleToggle.TextColor3 = Color3.new(1,1,1)
 Instance.new("UICorner", FOVCircleToggle).CornerRadius = UDim.new(0,8)
 
 local PlayerListFrame = Instance.new("ScrollingFrame", MainFrame)
-PlayerListFrame.Size = UDim2.new(0.8,0,0.25,0)
-PlayerListFrame.Position = UDim2.new(0.1,0,1.22,0)
+PlayerListFrame.Size = UDim2.new(0.8,0,0.24,0)
+PlayerListFrame.Position = UDim2.new(0.1,0,0.775,0)
 PlayerListFrame.BackgroundColor3 = Color3.fromRGB(30,30,30)
 PlayerListFrame.ScrollBarThickness = 6
 PlayerListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
@@ -287,7 +283,6 @@ Instance.new("UICorner", PlayerListFrame).CornerRadius = UDim.new(0,8)
 local PlayerListLayout = Instance.new("UIListLayout", PlayerListFrame)
 PlayerListLayout.Padding = UDim.new(0,4)
 
--- Variables (le reste est identique à ton script original)
 local espEnabledStatus = false
 local AimbotOn = false
 local FOVRadius = 110
@@ -556,7 +551,6 @@ RunService.Heartbeat:Connect(function(dt)
     end
 end)
 
--- === TOUTES LES CONNECTIONS DES BOUTONS (identiques) ===
 ESPToggle.MouseButton1Click:Connect(function()
     espEnabledStatus = not espEnabledStatus
     ESPToggle.Text = "ESP: " .. (espEnabledStatus and "ON" or "OFF")
