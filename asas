@@ -1,12 +1,11 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
 -- === CONFIGURATION ===
 local espInventoryEnabled = true 
-local MAX_DISTANCE = 1501 
+local MAX_DISTANCE = 1500 
 local BillboardCache = {}
 local cleanNameCache = {} 
 
@@ -23,19 +22,27 @@ local RARITY_COLORS = {
 -- === DÉTECTEUR UNIVERSEL (ARMES, RODS, PLATES, ETC.) ===
 local function getUniversalName(tool)
     if not tool or not tool.Name then return nil end
+    
+    -- Si on a déjà nettoyé ce nom, on le sort du cache
     if cleanNameCache[tool.Name] then return cleanNameCache[tool.Name] end
 
+    -- 1. On vérifie les attributs (souvent les vrais noms sont là)
     local attrName = tool:GetAttribute("ItemName") or tool:GetAttribute("DisplayName") or tool:GetAttribute("WeaponName")
     if attrName and tostring(attrName) ~= "" then
         cleanNameCache[tool.Name] = tostring(attrName)
         return tostring(attrName)
     end
 
+    -- 2. NETTOYAGE AGRESSIF DES IDS
+    -- On retire TOUS les chiffres et les symboles bizarres (_ , - , #)
     local clean = tool.Name:gsub("[%d%p%c%s]+", " "):match("^%s*(.-)%s*$")
+    
+    -- Si le nom devient vide (ex: l'item s'appelle "123"), on garde le nom original sans les chiffres
     if not clean or #clean < 1 then
         clean = tool.Name:gsub("%d+", "")
     end
 
+    -- 3. Cas spéciaux (Si c'est un RPG ou MP5 caché dans l'ID)
     local upperName = tool.Name:upper()
     if upperName:find("RPG") then clean = "RPG"
     elseif upperName:find("MP") then clean = "MP5"
@@ -69,12 +76,16 @@ local function updateESP(p)
     layout.VerticalAlignment = Enum.VerticalAlignment.Bottom 
     layout.Padding = UDim.new(0, 2)
 
+    -- On scanne TOUT l'inventaire sans exception
     local allTools = {}
+    
+    -- Objets dans le Backpack
     if p:FindFirstChild("Backpack") then
         for _, t in ipairs(p.Backpack:GetChildren()) do
             if t:IsA("Tool") then table.insert(allTools, t) end
         end
     end
+    -- Objet en main
     for _, t in ipairs(char:GetChildren()) do
         if t:IsA("Tool") then table.insert(allTools, t) end
     end
@@ -82,7 +93,9 @@ local function updateESP(p)
     for _, tool in ipairs(allTools) do
         local name = getUniversalName(tool)
         if name and name:lower() ~= "fists" then
+            -- Détection de rareté pour la couleur
             local rarity = tool:GetAttribute("Rarity") or tool:GetAttribute("RarityName") or "Common"
+            
             local lbl = Instance.new("TextLabel", container)
             lbl.Size = UDim2.new(0, 200, 0, 16)
             lbl.BackgroundTransparency = 1
@@ -93,9 +106,11 @@ local function updateESP(p)
             lbl.TextStrokeTransparency = 0.3
         end
     end
+    
     bb.Enabled = (#allTools > 0)
 end
 
+-- === INITIALISATION ===
 local function createESP(p)
     if p == LocalPlayer then return end
     local function setup(char)
@@ -124,7 +139,7 @@ task.spawn(function()
         for _, p in ipairs(Players:GetPlayers()) do
             if p ~= LocalPlayer then updateESP(p) end
         end
-        task.wait(1)
+        task.wait(1) -- Optimisation anti-lag
     end
 end)
 
@@ -249,7 +264,7 @@ local AimbotOn = false
 local FOVRadius = 110
 local WallCheckEnabled = true
 local FOVCircleVisible = true
-local FOVCircleForcedOff = false
+local FOVCircleForcedOff = false   -- ← ajouté pour la touche K
 local ProtectedPlayers = {}
 local PlayerButtons = {}
 local AIM_SMOOTHNESS = 0.8
@@ -265,7 +280,7 @@ FOVCircle.Filled = false
 FOVCircle.Visible = false
 
 local AIM_MODES = {
-    {name = "Head (fixed)",               part = "Head",                     color = Color3.fromRGB(100,100,255)},
+    {name = "Head (fixed)",               part = "Head",                        color = Color3.fromRGB(100,100,255)},
     {name = "Torso (fixed)",              part = "HumanoidRootPart",            color = Color3.fromRGB(255,150,50)},
     {name = "Right Arm (fixed)",          part = "RightUpperArm",               color = Color3.fromRGB(50,205,50)},
     {name = "Left Arm (fixed)",           part = "LeftUpperArm",                color = Color3.fromRGB(50,255,150)},
@@ -310,15 +325,18 @@ local function applyESP(char)
     local plr = Players:GetPlayerFromCharacter(char)
     if not plr or plr == LocalPlayer then return end
     removeESP(char)
+
     local head = char:FindFirstChild("Head")
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not head or not hum or not IsAlive(char) then return end
+
     local bill = Instance.new("BillboardGui", head)
     bill.Name = "AnouarNameHP"
     bill.Adornee = head
     bill.Size = UDim2.new(0,160,0,35)
     bill.StudsOffset = Vector3.new(0,2.8,0)
     bill.AlwaysOnTop = true
+
     local name = Instance.new("TextLabel", bill)
     name.Size = UDim2.new(1,0,0,16)
     name.BackgroundTransparency = 1
@@ -327,21 +345,25 @@ local function applyESP(char)
     name.TextStrokeTransparency = 0
     name.Font = Enum.Font.SourceSansBold
     name.TextSize = 14
+
     local hpBg = Instance.new("Frame", bill)
     hpBg.Size = UDim2.new(1,-6,0,5)
     hpBg.Position = UDim2.new(0,3,0,16)
     hpBg.BackgroundColor3 = Color3.new(0,0,0)
     Instance.new("UICorner", hpBg).CornerRadius = UDim.new(0,3)
+
     local hpFill = Instance.new("Frame", hpBg)
     hpFill.Size = UDim2.new(1,0,1,0)
     hpFill.BackgroundColor3 = Color3.fromRGB(0,255,0)
     Instance.new("UICorner", hpFill).CornerRadius = UDim.new(0,3)
+
     local hpText = Instance.new("TextLabel", hpBg)
     hpText.Size = UDim2.new(1,0,1,0)
     hpText.BackgroundTransparency = 1
     hpText.TextColor3 = Color3.new(1,1,1)
     hpText.TextStrokeTransparency = 0
     hpText.TextSize = 8
+
     local function updateHP()
         if hum.Parent and IsAlive(char) then
             local r = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
@@ -351,9 +373,11 @@ local function applyESP(char)
             removeESP(char)
         end
     end
+
     hum.HealthChanged:Connect(updateHP)
     hum.Died:Connect(function() removeESP(char) end)
     updateHP()
+
     local hl = Instance.new("Highlight", char)
     hl.Name = "AnouarHighlight"
     hl.OutlineColor = Color3.fromRGB(255,255,0)
@@ -410,6 +434,7 @@ local function UpdateProtectedList()
             btn.TextScaled = true
             Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
             table.insert(PlayerButtons, btn)
+
             btn.MouseButton1Click:Connect(function()
                 ProtectedPlayers[p] = not ProtectedPlayers[p]
                 UpdateProtectedList()
@@ -428,12 +453,15 @@ UpdateProtectedList()
 local function GetTargetPart(char)
     local mode = AIM_MODES[currentModeIndex]
     local partName
-    if mode.parts then partName = mode.parts[currentAutoIndex]
-    else partName = mode.part end
+    if mode.parts then
+        partName = mode.parts[currentAutoIndex]
+    else
+        partName = mode.part
+    end
     local part = char:FindFirstChild(partName)
     if not part then
         if partName == "RightUpperArm" then part = char:FindFirstChild("Right Arm") end
-        if partName == "LeftUpperArm" then part = char:FindFirstChild("Left Arm") end
+        if partName == "LeftUpperArm"   then part = char:FindFirstChild("Left Arm") end
     end
     return part or char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
 end
@@ -475,6 +503,7 @@ RunService.RenderStepped:Connect(function()
     FOVCircle.Position = Camera.ViewportSize / 2
     FOVCircle.Radius = FOVRadius
     FOVCircle.Visible = AimbotOn and FOVCircleVisible and not FOVCircleForcedOff
+    
     if AimbotOn then
         local target = GetClosest()
         if target and target.Character then
@@ -504,7 +533,11 @@ ESPToggle.MouseButton1Click:Connect(function()
     ESPToggle.BackgroundColor3 = espEnabledStatus and Color3.fromRGB(0,255,0) or Color3.fromRGB(255,0,0)
     for _, p in Players:GetPlayers() do
         if p ~= LocalPlayer and p.Character then
-            if espEnabledStatus then applyESP(p.Character) else removeESP(p.Character) end
+            if espEnabledStatus then 
+                applyESP(p.Character) 
+            else 
+                removeESP(p.Character) 
+            end
         end
     end
 end)
@@ -551,7 +584,9 @@ ESPInventoryToggle.MouseButton1Click:Connect(function()
     espInventoryEnabled = not espInventoryEnabled
     ESPInventoryToggle.Text = "ESP Inventory: " .. (espInventoryEnabled and "ON" or "OFF")
     ESPInventoryToggle.BackgroundColor3 = espInventoryEnabled and Color3.fromRGB(0,255,0) or Color3.fromRGB(255,0,0)
-    for _, p in ipairs(Players:GetPlayers()) do updateESP(p) end
+    for _, p in ipairs(Players:GetPlayers()) do
+        updateESP(p)
+    end
 end)
 
 local function makeDraggable(frame, dragArea)
@@ -566,11 +601,16 @@ local function makeDraggable(frame, dragArea)
     dragArea.InputChanged:Connect(function(input)
         if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
             local delta = input.Position - startMouse
-            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            frame.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
         end
     end)
     UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
     end)
 end
 
@@ -586,14 +626,17 @@ end)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
+    
     if input.KeyCode == Enum.KeyCode.G then
         guiOpen = not guiOpen
         MainFrame.Visible = guiOpen
         ToggleButton.Visible = not guiOpen
         if guiOpen then UpdateProtectedList() end
     end
+    
     if input.KeyCode == Enum.KeyCode.K then
         FOVCircleForcedOff = not FOVCircleForcedOff
+        
         if FOVCircleToggle then
             if FOVCircleForcedOff then
                 FOVCircleToggle.BackgroundColor3 = Color3.fromRGB(150,150,150)
